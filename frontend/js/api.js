@@ -4,7 +4,7 @@
  * This module normalizes that so callers can just `await api.get(...)`.
  */
 const API = (() => {
-  const BASE_URL = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com/';
+  const BASE_URL = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com';
 
   function getToken() {
     return localStorage.getItem('cg_token');
