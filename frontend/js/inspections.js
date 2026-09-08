@@ -63,7 +63,7 @@ window.syncOfflineInspections = async function() {
 
     showToast(`Syncing ${items.length} offline inspection(s)...`, 'info');
     const token = localStorage.getItem('cg_token');
-    const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com/';
+    const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com';
 
     let successCount = 0;
     for (const item of items) {
@@ -339,7 +339,7 @@ async function handleInspectionSubmit(e) {
   }
 
   const token = localStorage.getItem('cg_token');
-  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com/';
+  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com';
 
   const payloadObj = {};
   for (let [key, value] of formData.entries()) {
@@ -420,7 +420,7 @@ async function viewInspectionDetail(id) {
         ${observations.map(o => {
           let imgHtml = '';
           if (o.evidence_path) {
-            const API_BASE = (window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com/').replace('/api', '');
+            const API_BASE = (window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com').replace('/api', '');
             const relativePath = o.evidence_path.replace('./', '');
             imgHtml = `
               <div style="margin-top: 10px;">
