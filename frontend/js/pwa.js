@@ -70,7 +70,7 @@ window.syncAllOfflineData = async function() {
   const token = localStorage.getItem('cg_token');
   if (!token) return;
 
-  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8080/api';
+  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com/';
 
   // 1. Sync Inspections
   try {
