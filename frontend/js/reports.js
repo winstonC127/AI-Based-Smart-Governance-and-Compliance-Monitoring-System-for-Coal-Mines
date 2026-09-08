@@ -46,7 +46,7 @@ async function handleReportSubmit(e) {
   }
 
   const token = localStorage.getItem('cg_token');
-  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com/';
+  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com';
 
   try {
     const res = await fetch(`${API_BASE}/reports/generate`, {
