@@ -369,7 +369,7 @@ async function handleUploadSubmit(e) {
   if (fileField.files[0]) formData.append('document', fileField.files[0]);
 
   const token = localStorage.getItem('cg_token');
-  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8080/api';
+  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com/';
 
   try {
     const res = await fetch(`${API_BASE}/documents`, {
