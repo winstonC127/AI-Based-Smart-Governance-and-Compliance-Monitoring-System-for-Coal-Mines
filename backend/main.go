@@ -18,7 +18,11 @@ func main() {
 	cfg := config.Load()
 
 	database.Connect(cfg)
-	defer database.DB.Close()
+	defer func() {
+		if database.DB != nil {
+			_ = database.DB.Close()
+		}
+	}()
 
 	// Start automated SLA Escalation Cron scheduler
 	services.StartSLAEscalationCron(cfg)

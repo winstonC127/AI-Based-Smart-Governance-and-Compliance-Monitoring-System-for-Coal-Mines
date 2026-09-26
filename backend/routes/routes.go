@@ -7,6 +7,7 @@ import (
 
 	"coal-governance-backend/config"
 	"coal-governance-backend/controllers"
+	"coal-governance-backend/database"
 	"coal-governance-backend/middleware"
 	"coal-governance-backend/models"
 )
@@ -34,12 +35,34 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config) {
 	environmentalController := controllers.NewEnvironmentalController()
 	operationalController := controllers.NewOperationalController()
 
-	// Health check (unauthenticated) — useful for docker-compose healthchecks.
+	// Health check (unauthenticated) — reports service and database status
 	router.GET("/api/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "coal-governance backend is running"})
+		dbStatus := "connected"
+		if database.DB == nil || database.DB.Ping() != nil {
+			dbStatus = "disconnected"
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success":  true,
+			"message":  "coal-governance backend is running",
+			"database": dbStatus,
+		})
 	})
 
 	api := router.Group("/api")
+	api.Use(func(c *gin.Context) {
+		if c.Request.URL.Path == "/api/health" {
+			c.Next()
+			return
+		}
+		if database.DB == nil {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"message": "Database connection is initializing. Please retry in a few seconds.",
+			})
+			return
+		}
+		c.Next()
+	})
 	{
 		// ---------------- AUTH (public) ----------------
 		auth := api.Group("/auth")

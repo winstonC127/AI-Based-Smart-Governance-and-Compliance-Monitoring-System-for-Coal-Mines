@@ -63,19 +63,51 @@ func Connect(cfg *config.Config) {
 	var err error
 	DB, err = sql.Open("mysql", dsn)
 	if err != nil {
-		log.Fatalf("Failed to open database connection: %v", err)
+		log.Printf("Warning: failed to open MySQL driver: %v", err)
+		return
 	}
 
 	DB.SetMaxOpenConns(25)
 	DB.SetMaxIdleConns(10)
 	DB.SetConnMaxLifetime(5 * time.Minute)
 
-	if err = DB.Ping(); err != nil {
-		log.Fatalf("Failed to ping database: %v", err)
+	// Attempt connection with immediate retries
+	connected := false
+	for attempt := 1; attempt <= 3; attempt++ {
+		if err = DB.Ping(); err == nil {
+			connected = true
+			log.Println("Connected to MySQL database:", cfg.DBName)
+			RunMigrations()
+			break
+		}
+		log.Printf("Database connection attempt %d/3 failed: %v", attempt, err)
+		if attempt < 3 {
+			time.Sleep(2 * time.Second)
+		}
 	}
 
-	log.Println("Connected to MySQL database:", cfg.DBName)
-	RunMigrations()
+	if !connected {
+		log.Printf("WARNING: Could not connect to MySQL database at startup (%v). Starting server in resilient mode; reconnecting in background...", err)
+		go retryBackgroundConnect(cfg)
+	}
+}
+
+func retryBackgroundConnect(cfg *config.Config) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if DB == nil {
+			return
+		}
+		if err := DB.Ping(); err == nil {
+			log.Println("SUCCESS: Background database connection established! Running migrations...")
+			RunMigrations()
+			return
+		} else {
+			log.Printf("Background database reconnect attempt failed: %v", err)
+		}
+	}
 }
 
 // RunMigrations checks and adds required workflow and OCR columns to the documents table.
