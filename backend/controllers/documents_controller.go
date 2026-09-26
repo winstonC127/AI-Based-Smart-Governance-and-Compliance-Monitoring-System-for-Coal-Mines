@@ -262,8 +262,9 @@ func (dc *DocumentsController) UploadDocument(c *gin.Context) {
 		filePathNormalized = filepath.ToSlash(absPath)
 	}
 
-	// Call Flask OCR service
-	ocrURL := fmt.Sprintf("%s/ocr", dc.Cfg.AIServiceURL)
+	// Call Flask OCR service with normalized URL
+	baseURL := strings.TrimRight(dc.Cfg.AIServiceURL, "/")
+	ocrURL := fmt.Sprintf("%s/ocr", baseURL)
 	payload := map[string]string{"file_path": filePathNormalized}
 	payloadJSON, _ := json.Marshal(payload)
 
