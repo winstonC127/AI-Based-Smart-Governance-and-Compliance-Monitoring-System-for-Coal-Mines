@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   AUTH.renderShell('violations.html');
 
   const user = AUTH.getUser();
-  const canReport = ['SAFETY_OFFICER', 'SUPER_ADMIN'].includes(user.role_key);
+  const canReport = ['MINE_MANAGER', 'SAFETY_OFFICER', 'SUPER_ADMIN'].includes(user.role_key);
 
   if (canReport) {
     document.getElementById('report-violation-btn').classList.remove('hidden');
@@ -108,7 +108,7 @@ function applyFilters() {
 function renderViolationsTable(violations) {
   const tbody = document.getElementById('violations-table-body');
   if (violations.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" class="state-panel">No violations found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="state-panel">No violations found.</td></tr>`;
     return;
   }
 
@@ -128,26 +128,103 @@ function renderViolationsTable(violations) {
 
     let actionsHtml = '';
     if (v.status === 'OPEN' && canAssign) {
-      actionsHtml = `<button class="btn btn-primary btn-sm" onclick="openAssignModal(${v.id}, '${v.violation_code}')">Assign Action</button>`;
+      actionsHtml = `
+        <div style="display:flex; gap:6px; justify-content:center; align-items:center;">
+          <button class="btn btn-primary btn-sm" onclick="openAssignModal(${v.id}, '${v.violation_code}')">Assign Action</button>
+          <button class="btn btn-secondary btn-sm" onclick="dismissViolation(${v.id}, '${v.violation_code}')" title="Dismiss invalid / mistaken violation">Dismiss</button>
+        </div>`;
+    } else if ((v.status === 'IN_PROGRESS' || v.status === 'OVERDUE') && canAssign) {
+      actionsHtml = `<button class="btn btn-secondary btn-sm" onclick="openAssignModal(${v.id}, '${v.violation_code}')">Reassign</button>`;
     } else {
-      actionsHtml = `<span class="hint">No action required</span>`;
+      actionsHtml = `<span class="hint">${v.status === 'CLOSED' || v.status === 'VERIFIED' ? 'Resolved' : 'No action required'}</span>`;
     }
+
+    const formattedDeadline = v.deadline ? v.deadline.substring(0, 10) : '&mdash;';
 
     return `
       <tr>
-        <td class="mono"><strong>${v.violation_code}</strong></td>
-        <td>${v.mine_name}</td>
-        <td>${v.category_name}</td>
-        <td style="max-width:240px; font-size:12.5px; line-height:1.4;">${v.description}</td>
-        <td><span class="badge ${severityClass}">${v.severity}</span></td>
-        <td>${v.reported_by_name}</td>
-        <td>${v.responsible_name || '<span class="hint">Unassigned</span>'}</td>
-        <td>${v.deadline || '&mdash;'}</td>
-        <td><span class="badge badge-${statusClass}">${v.status}</span></td>
-        <td>${actionsHtml}</td>
+        <td class="mono" style="white-space: nowrap;"><strong>${v.violation_code}</strong></td>
+        <td style="white-space: nowrap;">${v.mine_name}</td>
+        <td style="white-space: nowrap;">${v.category_name}</td>
+        <td style="min-width: 220px; font-size: 13px; line-height: 1.4;">${v.description}</td>
+        <td style="white-space: nowrap;"><span class="badge ${severityClass}">${v.severity}</span></td>
+        <td style="white-space: nowrap;">${renderSLACell(v)}</td>
+        <td style="white-space: nowrap;">${v.reported_by_name}</td>
+        <td style="white-space: nowrap;">${v.responsible_name || '<span class="hint">Unassigned</span>'}</td>
+        <td style="white-space: nowrap; font-family: var(--font-mono);">${formattedDeadline}</td>
+        <td style="white-space: nowrap;"><span class="badge badge-${statusClass}">${v.status}</span></td>
+        <td style="white-space: nowrap; text-align: center;">${actionsHtml}</td>
       </tr>
     `;
   }).join('');
+
+  startSLACountdownInterval();
+}
+
+function renderSLACell(item) {
+  const level = item.escalation_level || 1;
+  const slaHours = item.sla_hours || 48;
+  const createdAt = item.created_at ? new Date(item.created_at).getTime() : Date.now();
+  const targetTime = createdAt + slaHours * 3600 * 1000;
+  
+  let levelBadge = '';
+  if (level === 3) {
+    levelBadge = `<span class="badge sla-badge-l3" title="Regulatory Breach Alert: Level 3 DGMS Escalation">⚠️ L3 DGMS Alert</span>`;
+  } else if (level === 2) {
+    levelBadge = `<span class="badge sla-badge-l2" title="Executive Breach Alert: Level 2 HQ Escalation">🔺 L2 HQ Alert</span>`;
+  } else {
+    levelBadge = `<span class="badge sla-badge-l1" title="Level 1 Site SLA Window: ${slaHours} Hours">L1 Site (${slaHours}h)</span>`;
+  }
+
+  const isResolved = ['CLOSED', 'VERIFIED', 'RESOLVED'].includes(item.status);
+  
+  return `
+    <div class="sla-timer-cell">
+      <div>${levelBadge}</div>
+      <div class="sla-countdown-timer" data-target-time="${targetTime}" data-status="${item.status}">
+        ${computeCountdownText(targetTime, isResolved)}
+      </div>
+    </div>
+  `;
+}
+
+function computeCountdownText(targetTime, isResolved) {
+  if (isResolved) {
+    return `<span class="sla-countdown active" style="color:var(--color-low);">✓ SLA Met</span>`;
+  }
+  const now = Date.now();
+  const diff = targetTime - now;
+
+  if (diff <= 0) {
+    const elapsedSecs = Math.floor(Math.abs(diff) / 1000);
+    const elapsedHours = Math.floor(elapsedSecs / 3600);
+    const elapsedMins = Math.floor((elapsedSecs % 3600) / 60);
+    return `<span class="sla-countdown breached">⚠️ Breached (+${elapsedHours}h ${elapsedMins}m)</span>`;
+  }
+
+  const totalSecs = Math.floor(diff / 1000);
+  const hours = Math.floor(totalSecs / 3600);
+  const mins = Math.floor((totalSecs % 3600) / 60);
+  const secs = totalSecs % 60;
+
+  const isUrgent = hours < 2;
+  const cls = isUrgent ? 'urgent' : 'active';
+  const icon = isUrgent ? '⏳' : '⏱️';
+
+  return `<span class="sla-countdown ${cls}">${icon} ${hours}h ${mins}m ${secs}s left</span>`;
+}
+
+let timerInterval = null;
+function startSLACountdownInterval() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    document.querySelectorAll('.sla-countdown-timer').forEach(el => {
+      const targetTime = parseInt(el.getAttribute('data-target-time'), 10);
+      const status = el.getAttribute('data-status');
+      const isResolved = ['CLOSED', 'VERIFIED', 'RESOLVED'].includes(status);
+      el.innerHTML = computeCountdownText(targetTime, isResolved);
+    });
+  }, 1000);
 }
 
 function openReportModal() {
@@ -210,16 +287,16 @@ async function handleAssignSubmit(e) {
   saveBtn.disabled = true;
   saveBtn.textContent = 'Assigning...';
 
+  const violationId = parseInt(document.getElementById('assign-violation-id').value, 10);
   const payload = {
-    violation_id: parseInt(document.getElementById('assign-violation-id').value, 10),
     assigned_to: parseInt(document.getElementById('assign-user').value, 10),
     action_description: document.getElementById('assign-desc').value.trim(),
     deadline: document.getElementById('assign-deadline').value
   };
 
   try {
-    await API.post('/corrective-actions', payload);
-    showToast('Corrective action assigned successfully', 'success');
+    await API.put(`/violations/${violationId}/assign`, payload);
+    showToast('Violation assigned and corrective action created successfully', 'success');
     closeAssignModal();
     await loadViolations();
   } catch (err) {
@@ -227,5 +304,22 @@ async function handleAssignSubmit(e) {
   } finally {
     saveBtn.disabled = false;
     saveBtn.textContent = 'Assign Action';
+  }
+}
+
+async function dismissViolation(id, code) {
+  const reason = prompt(`Reason for dismissing/closing Violation ${code} (e.g. false alarm / duplicate / mistaken report):`);
+  if (!reason || reason.trim().length < 10) {
+    if (reason !== null) {
+      showToast('A reason of at least 10 characters is required to dismiss', 'warning');
+    }
+    return;
+  }
+  try {
+    await API.put(`/violations/${id}/dismiss`, { reason: reason.trim() });
+    showToast(`Violation ${code} dismissed successfully`, 'success');
+    await loadViolations();
+  } catch (err) {
+    showError(err);
   }
 }

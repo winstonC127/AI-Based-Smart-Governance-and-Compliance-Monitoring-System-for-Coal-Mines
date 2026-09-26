@@ -128,12 +128,31 @@ const EMERGENCY = (() => {
   let mounted = false;
   let mines = [];
   let sending = false;
+  let selectedPreset = null;
+
+  function updateSubmitState() {
+    const submitBtn = document.getElementById('sos-submit');
+    if (!submitBtn) return;
+    const desc = (document.getElementById('sos-description')?.value || '').trim();
+    const hasValidInput = !!selectedPreset || desc.length > 0;
+    submitBtn.disabled = !hasValidInput || sending;
+  }
 
   function mount() {
     if (mounted || document.getElementById('sos-fab')) return;
     mounted = true;
 
     const sirenIcon = window.ICONS ? ICONS.get('siren') : '';
+    const flameIcon = window.ICONS ? ICONS.get('flame') : '';
+    const windIcon = window.ICONS ? ICONS.get('wind') : '';
+    const layersIcon = window.ICONS ? ICONS.get('layers') : '';
+    const dropletIcon = window.ICONS ? ICONS.get('droplet') : '';
+    const wrenchIcon = window.ICONS ? ICONS.get('wrench') : '';
+    const alertIcon = window.ICONS ? ICONS.get('alert') : '';
+    const sparklesIcon = window.ICONS ? ICONS.get('sparkles') : '';
+    const crossIcon = window.ICONS ? ICONS.get('cross') : '';
+    const warningIcon = window.ICONS ? ICONS.get('warning') : '';
+
     const fab = document.createElement('button');
     fab.id = 'sos-fab';
     fab.className = 'sos-fab';
@@ -152,46 +171,144 @@ const EMERGENCY = (() => {
           <button type="button" class="modal-close" id="sos-close">&times;</button>
         </div>
         <form id="sos-form">
-          <div class="modal-body">
-            <p class="sos-warning">This immediately logs a CRITICAL incident and alerts mine
-              management, safety officers, and regulatory oversight in real time.
-              Only use this for a genuine emergency.</p>
-            <div class="form-group">
-              <label for="sos-mine">Mine</label>
-              <select id="sos-mine" required></select>
-            </div>
-            <div class="form-group">
-              <label for="sos-description">What's happening? (optional)</label>
-              <textarea id="sos-description" rows="3" placeholder="e.g. Roof fall near sector 4, workers trapped"></textarea>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" id="sos-cancel">Cancel</button>
-            <button type="submit" class="btn btn-danger" id="sos-submit">Send SOS Alert</button>
-          </div>
+          ${renderModalFormHTML()}
         </form>
       </div>
     `;
     document.body.appendChild(backdrop);
 
     document.getElementById('sos-close').addEventListener('click', closeModal);
-    document.getElementById('sos-cancel').addEventListener('click', closeModal);
-    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModal(); });
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) closeModal();
+    });
     document.getElementById('sos-form').addEventListener('submit', handleSubmit);
+    resetModalToForm();
+  }
+  function renderModalFormHTML() {
+    const sirenIcon = window.ICONS ? ICONS.get('siren') : '';
+    const flameIcon = window.ICONS ? ICONS.get('flame') : '';
+    const windIcon = window.ICONS ? ICONS.get('wind') : '';
+    const layersIcon = window.ICONS ? ICONS.get('layers') : '';
+    const dropletIcon = window.ICONS ? ICONS.get('droplet') : '';
+    const wrenchIcon = window.ICONS ? ICONS.get('wrench') : '';
+    const alertIcon = window.ICONS ? ICONS.get('alert') : '';
+    const sparklesIcon = window.ICONS ? ICONS.get('sparkles') : '';
+    const crossIcon = window.ICONS ? ICONS.get('cross') : '';
+    const warningIcon = window.ICONS ? ICONS.get('warning') : '';
+
+    return `
+      <div class="modal-body" id="sos-modal-body-container">
+        <p class="sos-warning">This immediately logs a CRITICAL incident and alerts mine
+          management, safety officers, and regulatory oversight in real time.
+          Only use this for a genuine emergency.</p>
+        <div class="form-group">
+          <label for="sos-mine">Mine Site</label>
+          <select id="sos-mine" required></select>
+        </div>
+        <div class="sos-presets-section">
+          <label class="sos-presets-label">Emergency Type (Quick Select)</label>
+          <div class="sos-presets-grid" id="sos-presets-grid">
+            <button type="button" class="sos-preset-btn" data-type="FIRE">
+              <span class="preset-icon">${flameIcon}</span> Fire
+            </button>
+            <button type="button" class="sos-preset-btn" data-type="GAS_LEAK">
+              <span class="preset-icon">${windIcon}</span> Gas Leak
+            </button>
+            <button type="button" class="sos-preset-btn" data-type="ROOF_FALL">
+              <span class="preset-icon">${layersIcon}</span> Roof Fall
+            </button>
+            <button type="button" class="sos-preset-btn" data-type="FLOODING">
+              <span class="preset-icon">${dropletIcon}</span> Flooding
+            </button>
+            <button type="button" class="sos-preset-btn" data-type="EQUIPMENT_FAILURE">
+              <span class="preset-icon">${wrenchIcon}</span> Equip. Failure
+            </button>
+            <button type="button" class="sos-preset-btn" data-type="WORKER_TRAPPED">
+              <span class="preset-icon">${alertIcon}</span> Worker Trapped
+            </button>
+            <button type="button" class="sos-preset-btn" data-type="EXPLOSION">
+              <span class="preset-icon">${sparklesIcon}</span> Explosion
+            </button>
+            <button type="button" class="sos-preset-btn" data-type="MEDICAL_EMERGENCY">
+              <span class="preset-icon">${crossIcon}</span> Medical
+            </button>
+            <button type="button" class="sos-preset-btn" data-type="OTHER">
+              <span class="preset-icon">${warningIcon}</span> Other
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="sos-description">What's happening? (optional detail)</label>
+          <textarea id="sos-description" rows="3" placeholder="e.g. Near sector 4, two workers trapped, evacuation started..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer" id="sos-modal-footer-container">
+        <button type="button" class="btn btn-secondary" id="sos-cancel">Cancel</button>
+        <button type="submit" class="btn btn-danger" id="sos-submit" disabled>Send SOS Alert</button>
+      </div>
+    `;
+  }
+
+  function resetModalToForm() {
+    const form = document.getElementById('sos-form');
+    if (!form) return;
+    form.innerHTML = renderModalFormHTML();
+
+    document.getElementById('sos-cancel').addEventListener('click', closeModal);
+    const descEl = document.getElementById('sos-description');
+    descEl.addEventListener('input', updateSubmitState);
+
+    document.querySelectorAll('.sos-preset-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const type = btn.dataset.type;
+        if (selectedPreset === type) {
+          selectedPreset = null;
+          btn.classList.remove('active');
+        } else {
+          document.querySelectorAll('.sos-preset-btn').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          selectedPreset = type;
+
+          if (type === 'OTHER') {
+            descEl.classList.add('sos-textarea-prompt');
+            descEl.focus();
+            setTimeout(() => {
+              descEl.classList.remove('sos-textarea-prompt');
+            }, 1200);
+          }
+        }
+        updateSubmitState();
+      });
+    });
+
+    populateMineSelect();
+  }
+
+  function populateMineSelect() {
+    const select = document.getElementById('sos-mine');
+    if (!select) return;
+    if (mines.length > 0) {
+      select.innerHTML = mines
+        .map((m) => `<option value="${m.id}">${m.mine_name}</option>`)
+        .join('');
+    } else {
+      select.innerHTML = '<option>Loading mines...</option>';
+    }
   }
 
   async function openModal() {
+    selectedPreset = null;
+    resetModalToForm();
+    updateSubmitState();
+
     document.getElementById('sos-modal').classList.remove('hidden');
-    const select = document.getElementById('sos-mine');
     if (mines.length === 0) {
-      select.innerHTML = '<option>Loading mines...</option>';
       try {
         mines = await API.get('/mines');
-        select.innerHTML = mines
-          .map((m) => `<option value="${m.id}">${m.mine_name}</option>`)
-          .join('');
+        populateMineSelect();
       } catch (err) {
-        select.innerHTML = '<option value="">Could not load mines</option>';
+        const select = document.getElementById('sos-mine');
+        if (select) select.innerHTML = '<option value="">Could not load mines</option>';
         showError(err);
       }
     }
@@ -199,38 +316,120 @@ const EMERGENCY = (() => {
 
   function closeModal() {
     document.getElementById('sos-modal').classList.add('hidden');
-    document.getElementById('sos-description').value = '';
+    selectedPreset = null;
+    resetModalToForm();
+    updateSubmitState();
+  }
+
+  async function animateMeshRelay(hops, totalLatency) {
+    const bodyContainer = document.getElementById('sos-modal-body-container');
+    const footerContainer = document.getElementById('sos-modal-footer-container');
+    if (!bodyContainer) return;
+
+    if (footerContainer) footerContainer.innerHTML = '<div style="font-size:12px; color:var(--color-ink-muted);">Mesh multi-hop transmission in progress...</div>';
+
+    const windIcon = window.ICONS ? ICONS.get('wind') : '';
+    const sirenIcon = window.ICONS ? ICONS.get('siren') : '';
+
+    bodyContainer.innerHTML = `
+      <div class="mesh-telemetry-panel">
+        <div class="mesh-telemetry-header">
+          <div class="mesh-telemetry-title">
+            <span>${windIcon}</span> Underground Mesh Telemetry Simulation
+          </div>
+          <div class="mesh-telemetry-badge" id="mesh-live-status">TRANSMITTING...</div>
+        </div>
+        <div class="mesh-hop-list" id="mesh-live-hop-list"></div>
+        <div class="mesh-gateway-alert" id="mesh-live-gateway-alert">
+          <span>${sirenIcon}</span> Surface Gateway reached — Dashboard alerted (${totalLatency}ms total latency)
+        </div>
+      </div>
+    `;
+
+    const hopList = document.getElementById('mesh-live-hop-list');
+
+    for (let i = 0; i < hops.length; i++) {
+      const hop = hops[i];
+      const isGateway = (i === hops.length - 1);
+      const nodeEl = document.createElement('div');
+      nodeEl.className = 'mesh-hop-node';
+      nodeEl.innerHTML = `
+        <div class="mesh-node-info">
+          <div class="mesh-node-dot ${isGateway ? 'gateway' : ''}"></div>
+          <div>
+            <span class="mesh-node-name">Hop ${hop.hop_number}: ${hop.node_name}</span>
+          </div>
+        </div>
+        <div class="mesh-node-metrics">
+          <span class="mesh-signal-tag">📶 ${Math.round(hop.signal_strength_pct)}%</span>
+          <span class="mesh-latency-tag">⚡ ${hop.latency_ms}ms</span>
+        </div>
+      `;
+      hopList.appendChild(nodeEl);
+
+      await new Promise((r) => setTimeout(r, 60));
+      nodeEl.classList.add('visible', 'active-transmit');
+      await new Promise((r) => setTimeout(r, 260));
+      nodeEl.classList.remove('active-transmit');
+    }
+
+    const gatewayAlert = document.getElementById('mesh-live-gateway-alert');
+    const statusBadge = document.getElementById('mesh-live-status');
+    if (gatewayAlert) gatewayAlert.classList.add('visible');
+    if (statusBadge) {
+      statusBadge.textContent = 'DISPATCHED';
+      statusBadge.style.color = '#10b981';
+      statusBadge.style.background = 'rgba(16,185,129,0.15)';
+    }
+
+    await new Promise((r) => setTimeout(r, 900));
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (sending) return;
 
-    const mineId = document.getElementById('sos-mine').value;
-    const description = document.getElementById('sos-description').value.trim();
+    const mineId = document.getElementById('sos-mine')?.value;
+    const description = (document.getElementById('sos-description')?.value || '').trim();
     if (!mineId) {
       showToast('Select a mine first', 'error');
       return;
     }
 
+    if (!selectedPreset && !description) {
+      showToast('Select an emergency type or provide a description', 'warning');
+      return;
+    }
+
     const submitBtn = document.getElementById('sos-submit');
     sending = true;
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Sending...';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Transmitting Mesh Packet...';
+    }
 
     try {
       const result = await API.post('/incidents/emergency', {
         mine_id: parseInt(mineId, 10),
+        incident_type: selectedPreset || 'EMERGENCY_SOS',
         description,
       });
+
+      if (result.relay_hops && result.relay_hops.length > 0) {
+        await animateMeshRelay(result.relay_hops, result.total_latency_ms || 0);
+      }
+
       closeModal();
       showToast(`Emergency alert sent — ${result.notified_count} responder(s) notified`, 'success');
+
+      if (window.loadIncidents) {
+        window.loadIncidents();
+      }
     } catch (err) {
       showError(err);
     } finally {
       sending = false;
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Send SOS Alert';
+      updateSubmitState();
     }
   }
 

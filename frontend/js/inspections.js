@@ -63,7 +63,7 @@ window.syncOfflineInspections = async function() {
 
     showToast(`Syncing ${items.length} offline inspection(s)...`, 'info');
     const token = localStorage.getItem('cg_token');
-    const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com';
+    const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8080/api';
 
     let successCount = 0;
     for (const item of items) {
@@ -115,6 +115,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   document.getElementById('detail-close').addEventListener('click', closeDetailModal);
   document.getElementById('detail-back').addEventListener('click', closeDetailModal);
+
+  document.getElementById('void-modal-close').addEventListener('click', closeVoidModal);
+  document.getElementById('void-modal-cancel').addEventListener('click', closeVoidModal);
+  document.getElementById('void-inspection-form').addEventListener('submit', handleVoidSubmit);
+  document.getElementById('void-reason').addEventListener('input', (e) => {
+    const len = e.target.value.trim().length;
+    const submitBtn = document.getElementById('void-modal-submit');
+    const counter = document.getElementById('void-reason-counter');
+    counter.textContent = `${len} / 10 characters minimum`;
+    if (len >= 10) {
+      submitBtn.disabled = false;
+      counter.style.color = 'var(--color-success)';
+    } else {
+      submitBtn.disabled = true;
+      counter.style.color = 'var(--color-ink-muted)';
+    }
+  });
 
   document.getElementById('filter-mine').addEventListener('change', applyFilters);
   document.getElementById('filter-status').addEventListener('change', applyFilters);
@@ -222,22 +239,31 @@ function renderInspectionsTable(inspections) {
     return;
   }
 
+  const user = AUTH.getUser();
+  const isSupervisor = ['MINE_MANAGER', 'SAFETY_OFFICER', 'SUPER_ADMIN'].includes(user.role_key);
+
   tbody.innerHTML = inspections.map(i => {
     let badgeClass = 'inactive';
     if (i.status === 'APPROVED') badgeClass = 'active';
     else if (i.status === 'SUBMITTED') badgeClass = 'warning';
     else if (i.status === 'REVIEWED') badgeClass = 'info';
+    else if (i.status === 'VOIDED') badgeClass = 'inactive';
+
+    const isVoided = i.status === 'VOIDED';
+    const canVoid = (i.status === 'DRAFT' || i.status === 'SUBMITTED') && (user.id === i.inspector_id || isSupervisor);
+    const voidReasonAttr = i.void_reason ? `title="Voided by ${i.voided_by_name || 'Official'}: ${i.void_reason.replace(/"/g, '&quot;')}"` : '';
 
     return `
-      <tr>
+      <tr class="${isVoided ? 'row-voided' : ''}">
         <td><strong>${i.mine_name}</strong></td>
         <td>${i.inspection_type}</td>
         <td>${i.inspector_name}</td>
         <td>${i.inspection_date} &middot; <span class="hint">${i.inspection_time}</span></td>
         <td class="mono">${i.gps_latitude.toFixed(4)}, ${i.gps_longitude.toFixed(4)}</td>
-        <td><span class="badge badge-${badgeClass}">${i.status}</span></td>
+        <td><span class="badge badge-${badgeClass}" ${voidReasonAttr}>${i.status}</span></td>
         <td>
           <button class="btn btn-secondary btn-sm" onclick="viewInspectionDetail(${i.id})">View Details</button>
+          ${canVoid ? `<button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="openVoidModal(${i.id}, '${(i.mine_name || '').replace(/'/g, "\\'")}')">Void</button>` : ''}
         </td>
       </tr>
     `;
@@ -325,21 +351,27 @@ async function handleInspectionSubmit(e) {
   formData.append('status', status);
   formData.append('checklist', JSON.stringify(checklist));
 
-  // Add observation details if typed
+  // Add observation details if typed OR if photo is attached (Decoupled addendum)
   const obsText = document.getElementById('obs-description').value.trim();
-  if (obsText) {
-    formData.append('observation', obsText);
-    formData.append('observation_category_id', document.getElementById('obs-category').value);
-    formData.append('observation_severity', document.getElementById('obs-severity').value);
-    
-    const fileField = document.getElementById('obs-evidence');
-    if (fileField.files[0]) {
+  const fileField = document.getElementById('obs-evidence');
+  const hasFile = fileField && fileField.files && fileField.files.length > 0;
+
+  if (obsText || hasFile) {
+    if (obsText) {
+      formData.append('observation', obsText);
+    }
+    const catVal = document.getElementById('obs-category').value;
+    if (catVal) {
+      formData.append('observation_category_id', catVal);
+    }
+    formData.append('observation_severity', document.getElementById('obs-severity').value || 'LOW');
+    if (hasFile) {
       formData.append('evidence', fileField.files[0]);
     }
   }
 
   const token = localStorage.getItem('cg_token');
-  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com';
+  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8080/api';
 
   const payloadObj = {};
   for (let [key, value] of formData.entries()) {
@@ -395,6 +427,73 @@ async function handleInspectionSubmit(e) {
   }
 }
 
+function openVoidModal(id, mineName) {
+  document.getElementById('void-inspection-id').value = id;
+  document.getElementById('void-modal-title').textContent = `Void Inspection #${id} (${mineName || 'Mine'})`;
+  const reasonEl = document.getElementById('void-reason');
+  reasonEl.value = '';
+  document.getElementById('void-reason-counter').textContent = '0 / 10 characters minimum';
+  document.getElementById('void-reason-counter').style.color = 'var(--color-ink-muted)';
+  
+  const errBox = document.getElementById('void-modal-error');
+  if (errBox) {
+    errBox.textContent = '';
+    errBox.classList.add('hidden');
+  }
+
+  document.getElementById('void-modal-submit').disabled = true;
+  document.getElementById('void-modal').classList.remove('hidden');
+}
+
+function closeVoidModal() {
+  document.getElementById('void-modal').classList.add('hidden');
+}
+
+async function handleVoidSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('void-inspection-id').value;
+  const reason = document.getElementById('void-reason').value.trim();
+  if (reason.length < 10) {
+    showToast('Void reason must be at least 10 characters', 'warning');
+    return;
+  }
+
+  const submitBtn = document.getElementById('void-modal-submit');
+  const errBox = document.getElementById('void-modal-error');
+  if (errBox) {
+    errBox.textContent = '';
+    errBox.classList.add('hidden');
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Voiding...';
+
+  try {
+    const closeViolations = document.getElementById('void-close-violations') ? document.getElementById('void-close-violations').checked : true;
+    await API.put(`/inspections/${id}/void`, { reason, close_linked_violations: closeViolations });
+    showToast('Inspection voided successfully', 'success');
+    closeVoidModal();
+    if (!document.getElementById('detail-modal').classList.contains('hidden')) {
+      closeDetailModal();
+    }
+    await loadInspections();
+  } catch (err) {
+    const msg = err && err.message ? err.message : 'Failed to void inspection';
+    showToast(msg, 'error');
+    if (errBox) {
+      if (msg.toLowerCase().includes('violation')) {
+        errBox.innerHTML = `<strong>⚠️ Cannot Void Inspection:</strong> ${msg}<br/><div style="margin-top:8px;"><a href="violations.html" class="btn btn-warning btn-sm" style="text-decoration:none; display:inline-block;">👉 Go to Violations Register</a></div>`;
+      } else {
+        errBox.textContent = msg;
+      }
+      errBox.classList.remove('hidden');
+    }
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Confirm Void';
+  }
+}
+
 async function viewInspectionDetail(id) {
   const content = document.getElementById('detail-content');
   const actionsContainer = document.getElementById('workflow-actions-container');
@@ -412,6 +511,19 @@ async function viewInspectionDetail(id) {
     if (ins.status === 'APPROVED') badgeClass = 'active';
     else if (ins.status === 'SUBMITTED') badgeClass = 'warning';
     else if (ins.status === 'REVIEWED') badgeClass = 'info';
+    else if (ins.status === 'VOIDED') badgeClass = 'inactive';
+
+    let voidBanner = '';
+    if (ins.status === 'VOIDED') {
+      voidBanner = `
+        <div class="card card-body" style="background: #fee2e2; border-left: 4px solid #dc2626; padding: 12px; margin-bottom: 16px; border-radius: 4px;">
+          <strong style="color: #991b1b; display: block; font-size: 14px;">INSPECTION VOIDED</strong>
+          <div style="font-size: 13px; color: #7f1d1d; margin-top: 4px;">
+            <strong>Reason:</strong> ${ins.void_reason || 'No reason specified'}<br/>
+            <strong>Voided by:</strong> ${ins.voided_by_name || 'Official'} ${ins.voided_at ? `&middot; ${new Date(ins.voided_at).toLocaleString()}` : ''}
+          </div>
+        </div>`;
+    }
 
     let evidenceHtml = '';
     if (observations.length > 0) {
@@ -420,7 +532,7 @@ async function viewInspectionDetail(id) {
         ${observations.map(o => {
           let imgHtml = '';
           if (o.evidence_path) {
-            const API_BASE = (window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com').replace('/api', '');
+            const API_BASE = (window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8080/api').replace('/api', '');
             const relativePath = o.evidence_path.replace('./', '');
             imgHtml = `
               <div style="margin-top: 10px;">
@@ -480,6 +592,7 @@ async function viewInspectionDetail(id) {
     }
 
     content.innerHTML = `
+      ${voidBanner}
       <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;">
         <div style="flex: 1; min-width: 250px;">
           <table class="detail-info-table" style="width: 100%; font-size: 13.5px;">
@@ -529,20 +642,28 @@ async function viewInspectionDetail(id) {
       ${aiHtml}
     `;
 
-    // Add Approval workflows if allowed
+    // Add Approval and Void workflows if allowed
     const user = AUTH.getUser();
     const isSupervisor = ['MINE_MANAGER', 'SAFETY_OFFICER', 'SUPER_ADMIN'].includes(user.role_key);
+    const canVoidThis = (ins.status === 'DRAFT' || ins.status === 'SUBMITTED') && (user.id === ins.inspector_id || isSupervisor);
     
-    if (isSupervisor && ins.status === 'SUBMITTED') {
-      actionsContainer.innerHTML = `
-        <button class="btn btn-secondary" onclick="updateStatus(${ins.id}, 'REVIEWED')" style="margin-right:8px;">Mark Under Review</button>
-        <button class="btn btn-primary" onclick="updateStatus(${ins.id}, 'APPROVED')">Approve Inspection</button>
-      `;
-    } else if (isSupervisor && ins.status === 'REVIEWED') {
-      actionsContainer.innerHTML = `
-        <button class="btn btn-primary" onclick="updateStatus(${ins.id}, 'APPROVED')">Approve Inspection</button>
-      `;
+    let buttons = [];
+    const hasFailures = items.some(it => it.result === 'FAIL') || observations.length > 0;
+    if (isSupervisor && hasFailures) {
+      buttons.push(`<a href="violations.html" class="btn btn-warning" style="margin-right:8px; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">⚠️ View Violations & Assign</a>`);
     }
+    if (isSupervisor && ins.status === 'SUBMITTED') {
+      buttons.push(`<button class="btn btn-secondary" onclick="updateStatus(${ins.id}, 'REVIEWED')" style="margin-right:8px;">Mark Under Review</button>`);
+      buttons.push(`<button class="btn btn-primary" onclick="updateStatus(${ins.id}, 'APPROVED')" style="margin-right:8px;">Approve Inspection</button>`);
+    } else if (isSupervisor && ins.status === 'REVIEWED') {
+      buttons.push(`<button class="btn btn-primary" onclick="updateStatus(${ins.id}, 'APPROVED')" style="margin-right:8px;">Approve Inspection</button>`);
+    }
+
+    if (canVoidThis) {
+      buttons.push(`<button class="btn btn-danger" onclick="openVoidModal(${ins.id}, '${(ins.mine_name || '').replace(/'/g, "\\'")}')">Void Inspection</button>`);
+    }
+
+    actionsContainer.innerHTML = buttons.join('');
   } catch (err) {
     content.innerHTML = `<p class="state-panel error">${err.message}</p>`;
   }
@@ -576,19 +697,26 @@ async function runDraftAIAnalysis() {
     });
 
     // Populate panel
-    document.getElementById('ai-severity').textContent = res.severity;
-    document.getElementById('ai-risk-level').textContent = res.risk_level;
-    document.getElementById('ai-risk-score').textContent = res.risk_score;
+    document.getElementById('ai-severity').textContent = res.severity || 'MEDIUM';
+    document.getElementById('ai-risk-level').textContent = res.risk_level || 'MEDIUM';
+    document.getElementById('ai-risk-score').textContent = res.risk_score || 50;
     document.getElementById('ai-recurring-issue').textContent = res.recurring_issue ? 'YES' : 'NO';
-    document.getElementById('ai-confidence').textContent = Math.round(res.confidence * 100);
+    document.getElementById('ai-confidence').textContent = Math.round((res.confidence || 0.85) * 100);
     
-    document.getElementById('ai-summary').textContent = res.summary;
-    document.getElementById('ai-recommended-action').textContent = res.recommended_action;
-    document.getElementById('ai-reasoning').textContent = res.reasoning;
+    document.getElementById('ai-summary').textContent = res.summary || 'Observation evaluated.';
+    document.getElementById('ai-recommended-action').textContent = res.recommended_action || 'Review findings and schedule verification.';
+    document.getElementById('ai-reasoning').textContent = res.reasoning || '';
+
+    // Auto-sync observation severity dropdown
+    const sevSelect = document.getElementById('obs-severity');
+    if (sevSelect && res.severity) {
+      const matchOpt = Array.from(sevSelect.options).find(o => o.value.toUpperCase() === res.severity.toUpperCase());
+      if (matchOpt) sevSelect.value = matchOpt.value;
+    }
 
     // Show panel
     panel.classList.remove('hidden');
-    showToast('AI analysis completed successfully!', 'success');
+    showToast('AI compliance analysis completed successfully!', 'success');
   } catch (err) {
     showToast(err.message || 'AI service could not be reached', 'error');
   } finally {

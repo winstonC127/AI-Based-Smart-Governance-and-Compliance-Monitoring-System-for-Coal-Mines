@@ -19,4 +19,34 @@
 @media (max-width: 520px) {
   .kpi-grid { grid-template-columns: 1fr; }
   table.data-table { font-size: 12px; }
+  .modal { width: 95%; margin: 10px; }
+}
+
+@media (max-width: 400px) {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .toolbar select,
+  .toolbar button,
+  .toolbar input {
+    width: 100%;
+  }
+  .modal-footer {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+  .modal-footer button {
+    width: 100%;
+  }
+  .content {
+    padding: 10px;
+  }
+  .card {
+    padding: 12px;
+  }
+  .btn {
+    min-height: 44px; /* Touch target accessibility */
+  }
 }

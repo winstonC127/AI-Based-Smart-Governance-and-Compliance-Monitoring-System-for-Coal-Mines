@@ -116,7 +116,7 @@ function renderGrievancesTable(items) {
   const canAct = ['SUPER_ADMIN', 'MINE_MANAGER', 'SAFETY_OFFICER'].includes(user.role_key);
 
   if (!items || items.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="state-panel">No grievances match current filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="state-panel">No grievances match current filters.</td></tr>`;
     return;
   }
 
@@ -156,6 +156,7 @@ function renderGrievancesTable(items) {
           <div style="max-width:300px; line-height:1.4; font-size:13px;">${g.description}</div>
           ${g.resolution_notes ? `<div style="margin-top:6px; font-size:11.5px; color:var(--color-ink-muted); background:#f1f5f9; padding:4px 8px; border-radius:4px; border-left:3px solid var(--color-brand);"><strong>Notes:</strong> ${g.resolution_notes}</div>` : ''}
         </td>
+        <td>${renderGrievanceSLACell(g)}</td>
         <td><span class="badge ${badgeClass}">${g.status}</span></td>
         <td style="font-size:12.5px;">${g.assigned_to_name}</td>
         <td class="mono" style="font-size:12px;">${filedDate}</td>
@@ -163,6 +164,74 @@ function renderGrievancesTable(items) {
       </tr>
     `;
   }).join('');
+
+  startGrievanceSLACountdownInterval();
+}
+
+function renderGrievanceSLACell(item) {
+  const level = item.escalation_level || 1;
+  const slaHours = item.sla_hours || 48;
+  const createdAt = item.created_at ? new Date(item.created_at).getTime() : Date.now();
+  const targetTime = createdAt + slaHours * 3600 * 1000;
+  
+  let levelBadge = '';
+  if (level === 3) {
+    levelBadge = `<span class="badge sla-badge-l3" title="Regulatory Authority Escalation (L3)">⚠️ L3 DGMS Alert</span>`;
+  } else if (level === 2) {
+    levelBadge = `<span class="badge sla-badge-l2" title="Corporate HQ Escalated (L2)">🔺 L2 HQ Alert</span>`;
+  } else {
+    levelBadge = `<span class="badge sla-badge-l1" title="Site SLA Window: ${slaHours} Hours">L1 Site (${slaHours}h)</span>`;
+  }
+
+  const isResolved = ['CLOSED', 'RESOLVED'].includes(item.status);
+  
+  return `
+    <div class="sla-timer-cell">
+      <div>${levelBadge}</div>
+      <div class="g-sla-countdown-timer" data-target-time="${targetTime}" data-status="${item.status}">
+        ${computeGrievanceCountdownText(targetTime, isResolved)}
+      </div>
+    </div>
+  `;
+}
+
+function computeGrievanceCountdownText(targetTime, isResolved) {
+  if (isResolved) {
+    return `<span class="sla-countdown active" style="color:var(--color-low);">✓ SLA Met</span>`;
+  }
+  const now = Date.now();
+  const diff = targetTime - now;
+
+  if (diff <= 0) {
+    const elapsedSecs = Math.floor(Math.abs(diff) / 1000);
+    const elapsedHours = Math.floor(elapsedSecs / 3600);
+    const elapsedMins = Math.floor((elapsedSecs % 3600) / 60);
+    return `<span class="sla-countdown breached">⚠️ Breached (+${elapsedHours}h ${elapsedMins}m)</span>`;
+  }
+
+  const totalSecs = Math.floor(diff / 1000);
+  const hours = Math.floor(totalSecs / 3600);
+  const mins = Math.floor((totalSecs % 3600) / 60);
+  const secs = totalSecs % 60;
+
+  const isUrgent = hours < 2;
+  const cls = isUrgent ? 'urgent' : 'active';
+  const icon = isUrgent ? '⏳' : '⏱️';
+
+  return `<span class="sla-countdown ${cls}">${icon} ${hours}h ${mins}m ${secs}s left</span>`;
+}
+
+let gTimerInterval = null;
+function startGrievanceSLACountdownInterval() {
+  if (gTimerInterval) clearInterval(gTimerInterval);
+  gTimerInterval = setInterval(() => {
+    document.querySelectorAll('.g-sla-countdown-timer').forEach(el => {
+      const targetTime = parseInt(el.getAttribute('data-target-time'), 10);
+      const status = el.getAttribute('data-status');
+      const isResolved = ['CLOSED', 'RESOLVED'].includes(status);
+      el.innerHTML = computeGrievanceCountdownText(targetTime, isResolved);
+    });
+  }, 1000);
 }
 
 function openGrievanceModal() {

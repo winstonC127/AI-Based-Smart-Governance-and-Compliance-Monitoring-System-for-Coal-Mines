@@ -3,22 +3,29 @@ package controllers
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"coal-governance-backend/config"
 	"coal-governance-backend/database"
 	"coal-governance-backend/middleware"
 	"coal-governance-backend/models"
 	"coal-governance-backend/utils"
 )
 
-type CorrectiveActionsController struct{}
+type CorrectiveActionsController struct {
+	Cfg *config.Config
+}
 
-func NewCorrectiveActionsController() *CorrectiveActionsController {
-	return &CorrectiveActionsController{}
+func NewCorrectiveActionsController(cfg *config.Config) *CorrectiveActionsController {
+	return &CorrectiveActionsController{Cfg: cfg}
 }
 
 // ListCorrectiveActions fetches corrective actions, running the check-overdue logic first.
@@ -30,7 +37,7 @@ func (cac *CorrectiveActionsController) ListCorrectiveActions(c *gin.Context) {
 		SELECT ca.id, ca.violation_id, v.violation_code, v.description AS violation_desc, m.mine_name, v.severity,
 		       ca.assigned_to, u1.full_name AS assigned_to_name, ca.action_description, ca.deadline,
 		       ca.submitted_at, ca.verified_by, u2.full_name AS verified_by_name, ca.verified_at,
-		       ca.escalation_level, ca.status, ca.created_at
+		       ca.escalation_level, ca.status, ca.evidence_photo_path, ca.resolution_gps_latitude, ca.resolution_gps_longitude, ca.resolution_notes, ca.created_at
 		FROM corrective_actions ca
 		JOIN violations v ON v.id = ca.violation_id
 		JOIN mines m ON m.id = v.mine_id
@@ -68,11 +75,15 @@ func (cac *CorrectiveActionsController) ListCorrectiveActions(c *gin.Context) {
 		var subAt, verAt sql.NullTime
 		var verBy sql.NullInt64
 		var verByName sql.NullString
+		var evPhoto, resNotes sql.NullString
+		var resLat, resLng sql.NullFloat64
 
 		err := rows.Scan(&ca.ID, &ca.ViolationID, &ca.ViolationCode, &ca.ViolationDesc, &ca.MineName, &ca.Severity,
 			&ca.AssignedTo, &ca.AssignedToName, &ca.ActionDescription, &deadlineVal,
 			&subAt, &verBy, &verByName, &verAt,
-			&ca.EscalationLevel, &ca.Status, &ca.CreatedAt)
+			&ca.EscalationLevel, &ca.Status,
+			&evPhoto, &resLat, &resLng, &resNotes,
+			&ca.CreatedAt)
 		if err != nil {
 			utils.Fail(c, http.StatusInternalServerError, "Failed to parse corrective action", err.Error())
 			return
@@ -93,6 +104,18 @@ func (cac *CorrectiveActionsController) ListCorrectiveActions(c *gin.Context) {
 		}
 		if verByName.Valid {
 			ca.VerifiedByName = verByName.String
+		}
+		if evPhoto.Valid {
+			ca.EvidencePhotoPath = &evPhoto.String
+		}
+		if resLat.Valid {
+			ca.ResolutionGPSLat = &resLat.Float64
+		}
+		if resLng.Valid {
+			ca.ResolutionGPSLng = &resLng.Float64
+		}
+		if resNotes.Valid {
+			ca.ResolutionNotes = &resNotes.String
 		}
 
 		actions = append(actions, ca)
@@ -161,6 +184,209 @@ func (cac *CorrectiveActionsController) CreateCorrectiveAction(c *gin.Context) {
 	utils.Success(c, http.StatusCreated, "Corrective action assigned successfully", gin.H{"id": newID})
 }
 
+// ResolveWithEvidence handles resolving a corrective action with mandatory photo evidence and GPS coordinates.
+func (cac *CorrectiveActionsController) ResolveWithEvidence(c *gin.Context) {
+	id := c.Param("id")
+	actionID, err := strconv.Atoi(id)
+	if err != nil {
+		utils.Fail(c, http.StatusBadRequest, "Invalid corrective action ID", err.Error())
+		return
+	}
+
+	userIDVal, _ := c.Get(middleware.CtxUserID)
+	userID := userIDVal.(int)
+	userRoleVal, _ := c.Get(middleware.CtxRoleKey)
+	userRole := ""
+	if userRoleVal != nil {
+		userRole = userRoleVal.(string)
+	}
+
+	// Fetch corrective action, violation, and mine details
+	var assignedTo, violationID, mineID int
+	var currentStatus, violationCode, mineName string
+	var mineLat, mineLng sql.NullFloat64
+
+	err = database.DB.QueryRow(`
+		SELECT ca.assigned_to, ca.violation_id, ca.status, v.violation_code, v.mine_id, m.mine_name, m.latitude, m.longitude
+		FROM corrective_actions ca
+		JOIN violations v ON v.id = ca.violation_id
+		JOIN mines m ON m.id = v.mine_id
+		WHERE ca.id = ?`, actionID).Scan(&assignedTo, &violationID, &currentStatus, &violationCode, &mineID, &mineName, &mineLat, &mineLng)
+
+	if err == sql.ErrNoRows {
+		utils.Fail(c, http.StatusNotFound, "Corrective action not found", "not found")
+		return
+	} else if err != nil {
+		utils.Fail(c, http.StatusInternalServerError, "Database query failed", err.Error())
+		return
+	}
+
+	// Verify authorization: Assigned worker OR Super Admin
+	if assignedTo != userID && userRole != models.RoleSuperAdmin {
+		utils.Fail(c, http.StatusForbidden, "You are not assigned to resolve this corrective action", "forbidden")
+		return
+	}
+
+	if currentStatus == "SUBMITTED" || currentStatus == "CLOSED" || currentStatus == "VERIFIED" {
+		utils.Fail(c, http.StatusBadRequest, fmt.Sprintf("Corrective action is already in '%s' status", currentStatus), "invalid state")
+		return
+	}
+
+	// Parse GPS coordinates
+	latStr := strings.TrimSpace(c.PostForm("latitude"))
+	if latStr == "" {
+		latStr = strings.TrimSpace(c.PostForm("gps_latitude"))
+	}
+	lngStr := strings.TrimSpace(c.PostForm("longitude"))
+	if lngStr == "" {
+		lngStr = strings.TrimSpace(c.PostForm("gps_longitude"))
+	}
+	if latStr == "" || lngStr == "" {
+		utils.Fail(c, http.StatusBadRequest, "GPS coordinates (latitude and longitude) are required", "missing GPS")
+		return
+	}
+	lat, err1 := strconv.ParseFloat(latStr, 64)
+	lng, err2 := strconv.ParseFloat(lngStr, 64)
+	if err1 != nil || err2 != nil {
+		utils.Fail(c, http.StatusBadRequest, "Invalid GPS coordinates format", "invalid GPS")
+		return
+	}
+
+	// Parse photo evidence
+	file, header, fileErr := c.Request.FormFile("evidence")
+	if fileErr != nil {
+		utils.Fail(c, http.StatusBadRequest, "Evidence photo is required for resolution", "missing evidence photo")
+		return
+	}
+	defer file.Close()
+
+	resolutionNotes := strings.TrimSpace(c.PostForm("resolution_notes"))
+	if resolutionNotes == "" {
+		utils.Fail(c, http.StatusBadRequest, "Resolution notes are required", "missing resolution notes")
+		return
+	}
+
+	// Validate file extension
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" {
+		utils.Fail(c, http.StatusBadRequest, "Invalid evidence file type. Only JPG, PNG, and WebP images are accepted.", "invalid file type")
+		return
+	}
+	uploadDir := "./uploads"
+	if cac.Cfg != nil && cac.Cfg.UploadDir != "" {
+		uploadDir = cac.Cfg.UploadDir
+	}
+	_ = os.MkdirAll(uploadDir, os.ModePerm)
+	filename := fmt.Sprintf("resolution_%d_%d%s", actionID, time.Now().Unix(), ext)
+	evidencePath := filepath.Join(uploadDir, filename)
+
+	out, err := os.Create(evidencePath)
+	if err != nil {
+		utils.Fail(c, http.StatusInternalServerError, "Failed to save evidence file", err.Error())
+		return
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, file); err != nil {
+		utils.Fail(c, http.StatusInternalServerError, "Failed to write evidence file", err.Error())
+		return
+	}
+	evidencePath = filepath.ToSlash(evidencePath)
+
+	// Calculate distance to mine & geofence anomaly check
+	var distanceM float64 = 0
+	isOffSite := false
+	radiusM := 500.0
+	if cac.Cfg != nil && cac.Cfg.GeofenceRadiusM > 0 {
+		radiusM = cac.Cfg.GeofenceRadiusM
+	}
+
+	if mineLat.Valid && mineLng.Valid {
+		distanceM = HaversineDistance(lat, lng, mineLat.Float64, mineLng.Float64)
+		if distanceM > radiusM {
+			isOffSite = true
+		}
+	}
+
+	tx, err := database.DB.Begin()
+	if err != nil {
+		utils.Fail(c, http.StatusInternalServerError, "Failed to start transaction", err.Error())
+		return
+	}
+	defer tx.Rollback()
+
+	// If off-site resolution detected, flag an anomaly (does NOT block submission)
+	if isOffSite {
+		desc := fmt.Sprintf("Corrective action #%d resolved %.1fm away from %s (geofence perimeter: %.0fm)", actionID, distanceM, mineName, radiusM)
+		_, _ = tx.Exec(`
+			INSERT INTO anomalies (mine_id, anomaly_type, description, detected_value, expected_value, severity, status)
+			VALUES (?, 'OFF_SITE_RESOLUTION', ?, ?, ?, 'MEDIUM', 'NEW')`,
+			mineID, desc, distanceM, radiusM)
+	}
+
+	// Update corrective action record to SUBMITTED
+	_, err = tx.Exec(`
+		UPDATE corrective_actions 
+		SET status = 'SUBMITTED', submitted_at = NOW(), evidence_photo_path = ?, resolution_gps_latitude = ?, resolution_gps_longitude = ?, resolution_notes = ?
+		WHERE id = ?`,
+		evidencePath, lat, lng, resolutionNotes, actionID)
+	if err != nil {
+		utils.Fail(c, http.StatusInternalServerError, "Failed to update corrective action", err.Error())
+		return
+	}
+
+	// Violation status remains IN_PROGRESS until supervisor verifies it
+
+	// Notify Safety Officers and Mine Managers
+	var managerIDs []int
+	mgrRows, err := database.DB.Query(`
+		SELECT u.id FROM users u
+		JOIN roles r ON r.id = u.role_id
+		WHERE r.role_key IN ('MINE_MANAGER', 'SAFETY_OFFICER', 'SUPER_ADMIN') AND u.status = 'ACTIVE'`)
+	if err == nil {
+		for mgrRows.Next() {
+			var uid int
+			if err := mgrRows.Scan(&uid); err == nil && uid != userID {
+				managerIDs = append(managerIDs, uid)
+			}
+		}
+		mgrRows.Close()
+
+		title := fmt.Sprintf("Resolution Submitted: Violation %s", violationCode)
+		msg := fmt.Sprintf("Assignee submitted photo evidence and GPS resolution for action #%d (Violation %s). Pending review.", actionID, violationCode)
+		for _, uid := range managerIDs {
+			_, _ = tx.Exec(`
+				INSERT INTO notifications (recipient_id, title, message, severity, type, is_read)
+				VALUES (?, ?, ?, 'INFO', 'CORRECTIVE_ACTION_SUBMITTED', FALSE)`,
+				uid, title, msg)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		utils.Fail(c, http.StatusInternalServerError, "Failed to commit resolution transaction", err.Error())
+		return
+	}
+
+	// Audit Trail Log
+	utils.LogAudit(userID, "CORRECTIVE_ACTION_RESOLVED", "CORRECTIVE_ACTIONS", strconv.Itoa(actionID), map[string]interface{}{
+		"violation_code": violationCode,
+		"evidence_path":  evidencePath,
+		"lat":            lat,
+		"lng":            lng,
+		"distance_m":     distanceM,
+		"off_site":       isOffSite,
+		"notes":          resolutionNotes,
+	}, c.ClientIP())
+
+	utils.Success(c, http.StatusOK, "Corrective action resolved with geotagged evidence and submitted for review", gin.H{
+		"id":                 actionID,
+		"status":             "SUBMITTED",
+		"off_site_anomaly":   isOffSite,
+		"distance_to_mine_m": distanceM,
+		"evidence_path":      evidencePath,
+	})
+}
+
 // SubmitAction handles a worker submitting a completed corrective action.
 func (cac *CorrectiveActionsController) SubmitAction(c *gin.Context) {
 	id := c.Param("id")
@@ -222,12 +448,27 @@ func (cac *CorrectiveActionsController) SubmitAction(c *gin.Context) {
 func (cac *CorrectiveActionsController) VerifyAction(c *gin.Context) {
 	id := c.Param("id")
 	var req struct {
-		Approved bool   `json:"approved"` // true to close, false to reject back to ASSIGNED
-		Remarks  string `json:"remarks"`
+		Approved          *bool  `json:"approved"` // true to close, false to reject back to ASSIGNED
+		Action            string `json:"action"`   // "APPROVE" or "REJECT"
+		Remarks           string `json:"remarks"`
+		VerificationNotes string `json:"verification_notes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Fail(c, http.StatusBadRequest, "Invalid payload", err.Error())
 		return
+	}
+
+	isApproved := false
+	if req.Approved != nil && *req.Approved {
+		isApproved = true
+	}
+	if strings.ToUpper(req.Action) == "APPROVE" {
+		isApproved = true
+	}
+
+	remarks := req.Remarks
+	if remarks == "" {
+		remarks = req.VerificationNotes
 	}
 
 	userID, _ := c.Get(middleware.CtxUserID)
@@ -256,24 +497,24 @@ func (cac *CorrectiveActionsController) VerifyAction(c *gin.Context) {
 	}
 	defer tx.Rollback()
 
-	if req.Approved {
-		// Close the corrective action
+	if isApproved {
+		// Close the corrective action with VERIFIED status
 		_, err = tx.Exec(`
-			UPDATE corrective_actions SET status = 'CLOSED', verified_by = ?, verified_at = NOW() WHERE id = ?`,
+			UPDATE corrective_actions SET status = 'VERIFIED', verified_by = ?, verified_at = NOW() WHERE id = ?`,
 			userID, id)
 		if err != nil {
-			utils.Fail(c, http.StatusInternalServerError, "Failed to close corrective action", err.Error())
+			utils.Fail(c, http.StatusInternalServerError, "Failed to verify corrective action", err.Error())
 			return
 		}
 
-		// Close the violation
-		_, err = tx.Exec(`UPDATE violations SET status = 'CLOSED' WHERE id = ?`, violationID)
+		// Close the violation with RESOLVED status
+		_, err = tx.Exec(`UPDATE violations SET status = 'RESOLVED' WHERE id = ?`, violationID)
 		if err != nil {
-			utils.Fail(c, http.StatusInternalServerError, "Failed to close violation", err.Error())
+			utils.Fail(c, http.StatusInternalServerError, "Failed to update violation status", err.Error())
 			return
 		}
 
-		utils.LogAudit(userID.(int), "CORRECTIVE_ACTION_VERIFIED_CLOSED", "CORRECTIVE_ACTIONS", id, nil, c.ClientIP())
+		utils.LogAudit(userID.(int), "CORRECTIVE_ACTION_VERIFIED", "CORRECTIVE_ACTIONS", id, map[string]interface{}{"remarks": remarks}, c.ClientIP())
 	} else {
 		// Reject it back to ASSIGNED status
 		_, err = tx.Exec(`
@@ -290,7 +531,7 @@ func (cac *CorrectiveActionsController) VerifyAction(c *gin.Context) {
 			return
 		}
 
-		utils.LogAudit(userID.(int), "CORRECTIVE_ACTION_REJECTED", "CORRECTIVE_ACTIONS", id, map[string]interface{}{"remarks": req.Remarks}, c.ClientIP())
+		utils.LogAudit(userID.(int), "CORRECTIVE_ACTION_REJECTED", "CORRECTIVE_ACTIONS", id, map[string]interface{}{"remarks": remarks}, c.ClientIP())
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -397,7 +638,7 @@ func generateEscalationNotifications(violationID int, violationCode, severity st
 	defer rows.Close()
 
 	title := fmt.Sprintf("ESCALATION LEVEL %d: Overdue %s Violation", level, severity)
-	message := fmt.Sprintf("Violation %s is overdue and has been escalated to Level %d. Immediate review required.", violationCode, level)
+	message := fmt.Sprintf("Violation %s (ID #%d) is overdue and has been escalated to Level %d. Immediate review required.", violationCode, violationID, level)
 
 	for rows.Next() {
 		var uid int

@@ -19,16 +19,16 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config) {
 	dashboardController := controllers.NewDashboardController()
 	complianceController := controllers.NewComplianceController()
 	inspectionController := controllers.NewInspectionsController(cfg)
-	violationController := controllers.NewViolationsController()
-	correctiveActionsController := controllers.NewCorrectiveActionsController()
+	violationController := controllers.NewViolationsController(cfg)
+	correctiveActionsController := controllers.NewCorrectiveActionsController(cfg)
 	incidentsController := controllers.NewIncidentsController()
 	documentsController := controllers.NewDocumentsController(cfg)
 	notificationsController := controllers.NewNotificationsController()
 	simulationController := controllers.NewSimulationController()
 	reportsController := controllers.NewReportsController()
 	analyticsController := controllers.NewAnalyticsController(cfg)
-	attendanceController := controllers.NewAttendanceController()
-	grievanceController := controllers.NewGrievanceController()
+	attendanceController := controllers.NewAttendanceController(cfg)
+	grievanceController := controllers.NewGrievanceController(cfg)
 	auditController := controllers.NewAuditController()
 	contractorController := controllers.NewContractorController()
 	environmentalController := controllers.NewEnvironmentalController()
@@ -76,6 +76,8 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config) {
 			{
 				attendance.GET("", attendanceController.ListAttendance)
 				attendance.POST("", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), attendanceController.MarkAttendance)
+				attendance.POST("/self-checkin", attendanceController.SelfCheckin)
+				attendance.GET("/events", attendanceController.ListCheckinEvents)
 				attendance.GET("/report", attendanceController.GetAttendanceReport)
 			}
 			protected.GET("/workers", attendanceController.ListWorkers)
@@ -139,6 +141,7 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config) {
 				inspections.GET("", inspectionController.ListInspections)
 				inspections.GET("/:id", inspectionController.GetInspection)
 				inspections.POST("", middleware.RequireRoles(models.RoleInspector, models.RoleSafetyOfficer, models.RoleSuperAdmin), inspectionController.CreateInspection)
+				inspections.PUT("/:id/void", middleware.RequireRoles(models.RoleInspector, models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), inspectionController.VoidInspection)
 				inspections.PUT("/:id/status", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), inspectionController.UpdateInspectionStatus)
 				inspections.POST("/analyze-draft", inspectionController.AnalyzeInspectionDraft)
 				inspections.POST("/:id/analyze", inspectionController.AnalyzeInspection)
@@ -149,17 +152,25 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config) {
 			{
 				violations.GET("", violationController.ListViolations)
 				violations.GET("/:id", violationController.GetViolation)
-				violations.POST("", middleware.RequireRoles(models.RoleSafetyOfficer, models.RoleSuperAdmin), violationController.CreateViolation)
+				violations.POST("", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), violationController.CreateViolation)
 				violations.PUT("/:id", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), violationController.UpdateViolation)
+				violations.PUT("/:id/assign", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), violationController.AssignViolation)
+				violations.PUT("/:id/dismiss", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), violationController.DismissViolation)
+				violations.POST("/check-escalations", violationController.CheckSLAs)
 			}
+
+			// ---------------- SLA ESCALATION ----------------
+			protected.POST("/sla/check-escalations", violationController.CheckSLAs)
 
 			// ---------------- CORRECTIVE ACTIONS ----------------
 			correctiveActions := protected.Group("/corrective-actions")
 			{
 				correctiveActions.GET("", correctiveActionsController.ListCorrectiveActions)
 				correctiveActions.POST("", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), correctiveActionsController.CreateCorrectiveAction)
+				correctiveActions.POST("/:id/resolve", correctiveActionsController.ResolveWithEvidence)
 				correctiveActions.PUT("/:id/submit", correctiveActionsController.SubmitAction)
 				correctiveActions.PUT("/:id/verify", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), correctiveActionsController.VerifyAction)
+				correctiveActions.POST("/:id/verify", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), correctiveActionsController.VerifyAction)
 				correctiveActions.POST("/check-escalations", correctiveActionsController.TriggerEscalationCheck)
 			}
 
@@ -169,6 +180,7 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config) {
 				incidents.GET("", incidentsController.ListIncidents)
 				incidents.POST("", incidentsController.CreateIncident)
 				incidents.POST("/emergency", incidentsController.TriggerEmergency)
+				incidents.GET("/:id/relay-path", incidentsController.GetRelayPath)
 				incidents.PUT("/:id/status", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), incidentsController.UpdateIncidentStatus)
 			}
 

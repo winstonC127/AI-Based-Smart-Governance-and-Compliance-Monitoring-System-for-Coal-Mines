@@ -214,6 +214,13 @@ func (dc *DocumentsController) ListDocuments(c *gin.Context) {
 			}
 		}
 
+		if d.FilePath != "" {
+			d.FilePath = filepath.ToSlash(d.FilePath)
+			if idx := strings.LastIndex(d.FilePath, "uploads/"); idx != -1 {
+				d.FilePath = d.FilePath[idx:]
+			}
+		}
+
 		list = append(list, d)
 	}
 
@@ -374,6 +381,8 @@ func (dc *DocumentsController) UploadDocument(c *gin.Context) {
 		}
 	}
 
+	webFilePath := fmt.Sprintf("uploads/%s", filename)
+
 	res, err := database.DB.Exec(`
 		INSERT INTO documents (
 			mine_id, contractor_id, document_type, file_path, certificate_number,
@@ -383,7 +392,7 @@ func (dc *DocumentsController) UploadDocument(c *gin.Context) {
 			regulatory_reference, ocr_data_json, workflow_status
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_REVIEW')`,
-		mineIDVal, contractorIDVal, docType, filePathNormalized, certNumber,
+		mineIDVal, contractorIDVal, docType, webFilePath, certNumber,
 		issueDate, expiryDate, rawText, userID, status,
 		mineCode, inspectorName, inspectionDate, complianceStatus,
 		violationDetails, riskLevel, correctiveAction, dueDate,
@@ -456,6 +465,11 @@ func (dc *DocumentsController) ReviewDocument(c *gin.Context) {
 
 	userID, _ := c.Get(middleware.CtxUserID)
 
+	var dueDateVal interface{} = nil
+	if req.DueDate != "" {
+		dueDateVal = req.DueDate
+	}
+
 	_, err = database.DB.Exec(`
 		UPDATE documents
 		SET workflow_status='REVIEWED',
@@ -467,7 +481,7 @@ func (dc *DocumentsController) ReviewDocument(c *gin.Context) {
 		    reviewed_by=?,
 		    reviewed_at=NOW()
 		WHERE id=?`,
-		req.ComplianceStatus, req.ViolationDetails, req.RiskLevel, req.CorrectiveAction, req.DueDate, userID, id)
+		req.ComplianceStatus, req.ViolationDetails, req.RiskLevel, req.CorrectiveAction, dueDateVal, userID, id)
 
 	if err != nil {
 		utils.Fail(c, http.StatusInternalServerError, "Failed to update review status", err.Error())

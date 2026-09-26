@@ -177,7 +177,7 @@ func (ac *AuditController) VerifyAuditChain(c *gin.Context) {
 		}
 
 		// 2. Recompute row hash
-		timestampStr := createdAt.UTC().Format("2006-01-02 15:04:05")
+		timestampStr := createdAt.Format("2006-01-02 15:04:05")
 		computed := utils.ComputeAuditHash(prevHash, userID, action, module, recordID, string(detailsJSON), ip, timestampStr)
 
 		if computed != hash {

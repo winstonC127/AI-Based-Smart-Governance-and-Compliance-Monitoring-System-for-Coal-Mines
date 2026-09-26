@@ -8,16 +8,20 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"coal-governance-backend/config"
 	"coal-governance-backend/database"
 	"coal-governance-backend/middleware"
 	"coal-governance-backend/models"
+	"coal-governance-backend/services"
 	"coal-governance-backend/utils"
 )
 
-type GrievanceController struct{}
+type GrievanceController struct {
+	Cfg *config.Config
+}
 
-func NewGrievanceController() *GrievanceController {
-	return &GrievanceController{}
+func NewGrievanceController(cfg *config.Config) *GrievanceController {
+	return &GrievanceController{Cfg: cfg}
 }
 
 type submitGrievanceRequest struct {
@@ -38,10 +42,23 @@ func (gc *GrievanceController) SubmitGrievance(c *gin.Context) {
 	userIDVal, _ := c.Get(middleware.CtxUserID)
 	userID := userIDVal.(int)
 
+	// Determine SLA hours dynamically via AI classifier / deterministic fallback
+	var aiURL string
+	if gc.Cfg != nil {
+		aiURL = gc.Cfg.AIServiceURL
+	}
+	classification, slaHours := services.ClassifySLAWithAI(aiURL, req.Description)
+
+	// If category is Safety and SLA was routine, upgrade to at least 12h
+	if req.Category == "Safety" && slaHours > 12 {
+		slaHours = 12
+		classification = "URGENT"
+	}
+
 	res, err := database.DB.Exec(`
-		INSERT INTO grievances (worker_id, mine_id, category, description, status)
-		VALUES (?, ?, ?, ?, 'SUBMITTED')`,
-		req.WorkerID, req.MineID, req.Category, req.Description)
+		INSERT INTO grievances (worker_id, mine_id, category, description, status, escalation_level, sla_hours)
+		VALUES (?, ?, ?, ?, 'SUBMITTED', 1, ?)`,
+		req.WorkerID, req.MineID, req.Category, req.Description, slaHours)
 
 	if err != nil {
 		utils.Fail(c, http.StatusInternalServerError, "Failed to submit grievance", err.Error())
@@ -55,7 +72,7 @@ func (gc *GrievanceController) SubmitGrievance(c *gin.Context) {
 	_ = database.DB.QueryRow(`SELECT mine_name FROM mines WHERE id = ?`, req.MineID).Scan(&mineName)
 
 	title := fmt.Sprintf("New Grievance Submitted — %s", mineName)
-	message := fmt.Sprintf("Grievance #%d (%s) reported: %s", newID, req.Category, req.Description)
+	message := fmt.Sprintf("Grievance #%d (%s, SLA: %d hrs) reported: %s", newID, req.Category, slaHours, req.Description)
 
 	// Fan out notification to Mine Manager and Safety Officer
 	rows, _ := database.DB.Query(`
@@ -76,9 +93,13 @@ func (gc *GrievanceController) SubmitGrievance(c *gin.Context) {
 	}
 
 	utils.LogAudit(userID, "GRIEVANCE_SUBMITTED", "GRIEVANCES", strconv.FormatInt(newID, 10),
-		map[string]interface{}{"mine_id": req.MineID, "category": req.Category, "worker_id": req.WorkerID}, c.ClientIP())
+		map[string]interface{}{"mine_id": req.MineID, "category": req.Category, "worker_id": req.WorkerID, "sla_hours": slaHours, "classification": classification}, c.ClientIP())
 
-	utils.Success(c, http.StatusCreated, "Grievance submitted successfully", gin.H{"id": newID})
+	utils.Success(c, http.StatusCreated, "Grievance submitted successfully", gin.H{
+		"id":             newID,
+		"sla_hours":      slaHours,
+		"classification": classification,
+	})
 }
 
 // ListGrievances fetches grievances with optional filters.
@@ -86,6 +107,7 @@ func (gc *GrievanceController) ListGrievances(c *gin.Context) {
 	query := `
 		SELECT g.id, g.worker_id, COALESCE(w.full_name, 'Anonymous Worker'), COALESCE(w.worker_code, ''),
 		       g.mine_id, m.mine_name, g.category, g.description, g.status,
+		       COALESCE(g.escalation_level, 1), COALESCE(g.sla_hours, 48), g.escalated_at,
 		       g.assigned_to, COALESCE(u.full_name, 'Unassigned'),
 		       COALESCE(g.resolution_notes, ''), g.created_at, g.updated_at
 		FROM grievances g
@@ -125,9 +147,13 @@ func (gc *GrievanceController) ListGrievances(c *gin.Context) {
 	for rows.Next() {
 		var g models.Grievance
 		var workerID, assignedTo sql.NullInt64
+		var escLevel, slaHours int
+		var escAt sql.NullTime
+
 		err := rows.Scan(
 			&g.ID, &workerID, &g.WorkerName, &g.WorkerCode,
 			&g.MineID, &g.MineName, &g.Category, &g.Description, &g.Status,
+			&escLevel, &slaHours, &escAt,
 			&assignedTo, &g.AssignedToName,
 			&g.ResolutionNotes, &g.CreatedAt, &g.UpdatedAt,
 		)
@@ -143,6 +169,13 @@ func (gc *GrievanceController) ListGrievances(c *gin.Context) {
 			aid := int(assignedTo.Int64)
 			g.AssignedTo = &aid
 		}
+
+		g.EscalationLevel = escLevel
+		g.SLAHours = slaHours
+		if escAt.Valid {
+			g.EscalatedAt = &escAt.Time
+		}
+
 		list = append(list, g)
 	}
 
@@ -159,10 +192,13 @@ func (gc *GrievanceController) GetGrievance(c *gin.Context) {
 
 	var g models.Grievance
 	var workerID, assignedTo sql.NullInt64
+	var escLevel, slaHours int
+	var escAt sql.NullTime
 
 	row := database.DB.QueryRow(`
 		SELECT g.id, g.worker_id, COALESCE(w.full_name, 'Anonymous Worker'), COALESCE(w.worker_code, ''),
 		       g.mine_id, m.mine_name, g.category, g.description, g.status,
+		       COALESCE(g.escalation_level, 1), COALESCE(g.sla_hours, 48), g.escalated_at,
 		       g.assigned_to, COALESCE(u.full_name, 'Unassigned'),
 		       COALESCE(g.resolution_notes, ''), g.created_at, g.updated_at
 		FROM grievances g
@@ -174,6 +210,7 @@ func (gc *GrievanceController) GetGrievance(c *gin.Context) {
 	err = row.Scan(
 		&g.ID, &workerID, &g.WorkerName, &g.WorkerCode,
 		&g.MineID, &g.MineName, &g.Category, &g.Description, &g.Status,
+		&escLevel, &slaHours, &escAt,
 		&assignedTo, &g.AssignedToName,
 		&g.ResolutionNotes, &g.CreatedAt, &g.UpdatedAt,
 	)
@@ -192,6 +229,12 @@ func (gc *GrievanceController) GetGrievance(c *gin.Context) {
 	if assignedTo.Valid {
 		aid := int(assignedTo.Int64)
 		g.AssignedTo = &aid
+	}
+
+	g.EscalationLevel = escLevel
+	g.SLAHours = slaHours
+	if escAt.Valid {
+		g.EscalatedAt = &escAt.Time
 	}
 
 	utils.Success(c, http.StatusOK, "Grievance fetched successfully", g)
@@ -293,6 +336,8 @@ func (gc *GrievanceController) EscalateGrievance(c *gin.Context) {
 	_, err = database.DB.Exec(`
 		UPDATE grievances 
 		SET status = 'ESCALATED', 
+		    escalation_level = 2,
+		    escalated_at = NOW(),
 		    resolution_notes = CASE WHEN resolution_notes IS NULL OR resolution_notes = '' THEN ? ELSE CONCAT(resolution_notes, '\n', ?) END,
 		    updated_at = NOW()
 		WHERE id = ?`, notes, notes, id)

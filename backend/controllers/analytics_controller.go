@@ -243,33 +243,42 @@ func (ac *AnalyticsController) HandleVoiceQuery(c *gin.Context) {
 
 	userID, _ := c.Get("userID")
 
-	// Context Gathering: Fetch current risk scores for mines
+	// Context Gathering: Fetch current mines and risk scores
 	mineRankRows, err := database.DB.Query(`
-		SELECT m.mine_name, IFNULL(r.score, 0)
+		SELECT m.id, m.mine_name, m.mine_code, IFNULL(m.state, ''), IFNULL(m.mine_type, 'OPENCAST'), IFNULL(r.score, 0)
 		FROM mines m
 		LEFT JOIN risk_scores r ON r.mine_id = m.id AND r.computed_at = (SELECT MAX(computed_at) FROM risk_scores WHERE mine_id = m.id)
-		ORDER BY r.score DESC
-		LIMIT 20`)
-	var contextMines []map[string]interface{}
+		WHERE m.status = 'ACTIVE'
+		ORDER BY r.score DESC`)
+	contextMines := []map[string]interface{}{}
 	if err == nil {
 		defer mineRankRows.Close()
 		for mineRankRows.Next() {
-			var name string
+			var id int
+			var name, code, state, mType string
 			var score float64
-			if err := mineRankRows.Scan(&name, &score); err == nil {
-				contextMines = append(contextMines, map[string]interface{}{"mine_name": name, "risk_score": score})
+			if err := mineRankRows.Scan(&id, &name, &code, &state, &mType, &score); err == nil {
+				contextMines = append(contextMines, map[string]interface{}{
+					"mine_id":    id,
+					"mine_name":  name,
+					"mine_code":  code,
+					"state":      state,
+					"mine_type":  mType,
+					"risk_score": score,
+				})
 			}
 		}
 	}
 
-	// Also fetch pending violations counts
+	// Fetch pending violations counts
 	vioRows, err := database.DB.Query(`
 		SELECT m.mine_name, COUNT(v.id) 
 		FROM violations v
 		JOIN mines m ON v.mine_id = m.id
 		WHERE v.status = 'OPEN'
 		GROUP BY m.mine_name`)
-	var contextViolations []map[string]interface{}
+	contextViolations := []map[string]interface{}{}
+	totalOpenVios := 0
 	if err == nil {
 		defer vioRows.Close()
 		for vioRows.Next() {
@@ -277,13 +286,43 @@ func (ac *AnalyticsController) HandleVoiceQuery(c *gin.Context) {
 			var count int
 			if err := vioRows.Scan(&name, &count); err == nil {
 				contextViolations = append(contextViolations, map[string]interface{}{"mine_name": name, "open_violations": count})
+				totalOpenVios += count
 			}
 		}
 	}
 
+	// Fetch critical violations count
+	var critViosCount int
+	_ = database.DB.QueryRow(`SELECT COUNT(*) FROM violations WHERE status = 'OPEN' AND severity = 'CRITICAL'`).Scan(&critViosCount)
+
+	// Fetch worker metrics
+	var totalWorkers, presentToday int
+	_ = database.DB.QueryRow(`SELECT COUNT(*) FROM workers WHERE status = 'ACTIVE'`).Scan(&totalWorkers)
+	_ = database.DB.QueryRow(`SELECT COUNT(*) FROM attendance WHERE record_date = CURDATE() AND status = 'PRESENT'`).Scan(&presentToday)
+
+	// Fetch latest production total
+	var todayProd float64
+	_ = database.DB.QueryRow(`SELECT IFNULL(SUM(production_tonnes), 0) FROM operational_data WHERE record_date = CURDATE()`).Scan(&todayProd)
+	if todayProd == 0 {
+		_ = database.DB.QueryRow(`SELECT IFNULL(SUM(production_tonnes), 0) FROM operational_data WHERE record_date = (SELECT MAX(record_date) FROM operational_data)`).Scan(&todayProd)
+	}
+
+	// Fetch active anomalies and incidents
+	var activeAnomalies, activeIncidents int
+	_ = database.DB.QueryRow(`SELECT COUNT(*) FROM anomalies WHERE status = 'NEW'`).Scan(&activeAnomalies)
+	_ = database.DB.QueryRow(`SELECT COUNT(*) FROM incidents WHERE status IN ('OPEN', 'REPORTED', 'INVESTIGATING', 'ACTION_REQUIRED')`).Scan(&activeIncidents)
+
 	contextData := map[string]interface{}{
-		"mines_risk": contextMines,
-		"pending_violations": contextViolations,
+		"total_mines_count":       len(contextMines),
+		"mines_risk":              contextMines,
+		"pending_violations":      contextViolations,
+		"total_open_violations":   totalOpenVios,
+		"critical_violations":     critViosCount,
+		"total_active_workers":    totalWorkers,
+		"workers_present_today":   presentToday,
+		"today_production_tonnes": todayProd,
+		"active_anomalies_count":  activeAnomalies,
+		"active_incidents_count":  activeIncidents,
 	}
 
 	payload := map[string]interface{}{
@@ -349,13 +388,15 @@ func (ac *AnalyticsController) TranslateText(c *gin.Context) {
 	c.JSON(http.StatusOK, aiResult)
 }
 
-// GetAnomalies returns all registered operational/environmental anomalies.
+// GetAnomalies returns all registered operational, environmental, and attendance tamper anomalies.
 func (ac *AnalyticsController) GetAnomalies(c *gin.Context) {
 	rows, err := database.DB.Query(`
-		SELECT a.id, a.mine_id, m.mine_name, a.anomaly_type, a.description, a.detected_value, a.expected_value, a.severity, a.status, a.detected_at
+		SELECT a.id, a.mine_id, m.mine_name, a.worker_id, COALESCE(w.full_name, ''), COALESCE(w.worker_code, ''),
+		       a.anomaly_type, a.description, a.detected_value, a.expected_value, a.severity, a.status, a.detected_at
 		FROM anomalies a
 		JOIN mines m ON m.id = a.mine_id
-		ORDER BY a.detected_at DESC`)
+		LEFT JOIN workers w ON w.id = a.worker_id
+		ORDER BY a.detected_at DESC LIMIT 200`)
 	if err != nil {
 		utils.Fail(c, http.StatusInternalServerError, "Failed to query anomalies", err.Error())
 		return
@@ -366,10 +407,13 @@ func (ac *AnalyticsController) GetAnomalies(c *gin.Context) {
 		ID            int       `json:"id"`
 		MineID        int       `json:"mine_id"`
 		MineName      string    `json:"mine_name"`
+		WorkerID      *int      `json:"worker_id,omitempty"`
+		WorkerName    string    `json:"worker_name,omitempty"`
+		WorkerCode    string    `json:"worker_code,omitempty"`
 		AnomalyType   string    `json:"anomaly_type"`
 		Description   string    `json:"description"`
-		DetectedValue float64   `json:"detected_value"`
-		ExpectedValue float64   `json:"expected_value"`
+		DetectedValue *float64  `json:"detected_value,omitempty"`
+		ExpectedValue *float64  `json:"expected_value,omitempty"`
 		Severity      string    `json:"severity"`
 		Status        string    `json:"status"`
 		DetectedAt    time.Time `json:"detected_at"`
@@ -378,11 +422,29 @@ func (ac *AnalyticsController) GetAnomalies(c *gin.Context) {
 	list := []anomalyItem{}
 	for rows.Next() {
 		var ai anomalyItem
-		err := rows.Scan(&ai.ID, &ai.MineID, &ai.MineName, &ai.AnomalyType, &ai.Description, &ai.DetectedValue, &ai.ExpectedValue, &ai.Severity, &ai.Status, &ai.DetectedAt)
+		var wid sql.NullInt64
+		var dVal, eVal sql.NullFloat64
+
+		err := rows.Scan(
+			&ai.ID, &ai.MineID, &ai.MineName, &wid, &ai.WorkerName, &ai.WorkerCode,
+			&ai.AnomalyType, &ai.Description, &dVal, &eVal, &ai.Severity, &ai.Status, &ai.DetectedAt,
+		)
 		if err != nil {
 			utils.Fail(c, http.StatusInternalServerError, "Failed to parse anomaly", err.Error())
 			return
 		}
+
+		if wid.Valid {
+			val := int(wid.Int64)
+			ai.WorkerID = &val
+		}
+		if dVal.Valid {
+			ai.DetectedValue = &dVal.Float64
+		}
+		if eVal.Valid {
+			ai.ExpectedValue = &eVal.Float64
+		}
+
 		list = append(list, ai)
 	}
 

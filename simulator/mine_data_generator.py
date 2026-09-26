@@ -155,6 +155,9 @@ def generate_telemetry():
                         dust_level = VALUES(dust_level)""",
                     (mine_id, record_date, aqi, wqi, noise, dust))
                 
+            # Simulate Underground Mesh Network Nodes Telemetry
+            simulate_mesh_nodes(cursor, db, mode)
+
             db.commit()
             cursor.close()
             db.close()
@@ -164,6 +167,42 @@ def generate_telemetry():
             
         # Tick every 5 seconds
         time.sleep(5)
+
+def simulate_mesh_nodes(cursor, db, mode):
+    try:
+        cursor.execute("SELECT id, mine_id, node_name, hop_sequence, battery_pct, status FROM mesh_nodes")
+        nodes = cursor.fetchall()
+        if not nodes:
+            return
+        
+        for node_id, m_id, name, hop_seq, batt, status in nodes:
+            new_batt = max(55.0, min(100.0, float(batt) - random.uniform(-0.1, 0.2)))
+            new_status = status
+            
+            if mode == "SAFETY_INCIDENT" or mode == "HIGH_RISK_MODE":
+                # In hazard mode, intermediate node 3 is knocked offline to demonstrate dynamic mesh rerouting
+                if m_id == 1 and hop_seq == 3:
+                    new_status = "OFFLINE"
+                else:
+                    new_status = "ONLINE"
+            else:
+                # Normal mode: 95% online, rare transient 5% flicker on intermediate repeater nodes
+                if hop_seq < 6 and random.random() < 0.08:
+                    new_status = "OFFLINE" if status == "ONLINE" else "ONLINE"
+                else:
+                    new_status = "ONLINE"
+            
+            cursor.execute("""
+                UPDATE mesh_nodes 
+                SET battery_pct = %s, status = %s, last_heartbeat = NOW()
+                WHERE id = %s
+            """, (new_batt, new_status, node_id))
+            
+            if new_status != status:
+                print(f"[MESH NETWORK SIM] Node {name} (Mine {m_id}, Hop {hop_seq}) toggled to {new_status} (Battery: {new_batt:.1f}%)")
+    except Exception as e:
+        # Avoid crashing telemetry loop if mesh_nodes table is not yet migrated
+        pass
 
 if __name__ == "__main__":
     # Create default simulator mode file if missing
@@ -175,3 +214,4 @@ if __name__ == "__main__":
             pass
             
     generate_telemetry()
+

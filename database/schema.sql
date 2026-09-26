@@ -171,11 +171,15 @@ CREATE TABLE inspections (
     gps_latitude        DECIMAL(10,6),
     gps_longitude       DECIMAL(10,6),
     remarks             TEXT,
-    status              ENUM('DRAFT','SUBMITTED','REVIEWED','APPROVED') DEFAULT 'DRAFT',
+    status              ENUM('DRAFT','SUBMITTED','REVIEWED','APPROVED','VOIDED') DEFAULT 'DRAFT',
+    void_reason         VARCHAR(255) NULL,
+    voided_by           INT NULL,
+    voided_at           TIMESTAMP NULL,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (mine_id) REFERENCES mines(id),
     FOREIGN KEY (inspector_id) REFERENCES users(id),
+    FOREIGN KEY (voided_by) REFERENCES users(id),
     INDEX idx_inspections_mine (mine_id),
     INDEX idx_inspections_date (inspection_date)
 );
@@ -195,7 +199,7 @@ CREATE TABLE observations (
     id              INT PRIMARY KEY AUTO_INCREMENT,
     inspection_id   INT NOT NULL,
     category_id     INT NULL,
-    observation     TEXT NOT NULL,
+    observation     TEXT NULL,
     severity        ENUM('LOW','MEDIUM','HIGH','CRITICAL') DEFAULT 'LOW',
     evidence_path   VARCHAR(255),
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -216,7 +220,10 @@ CREATE TABLE violations (
     reported_by         INT NOT NULL,
     responsible_person  INT NULL,
     deadline            DATE,
-    status              ENUM('OPEN','IN_PROGRESS','RESOLVED','VERIFIED','CLOSED','OVERDUE') DEFAULT 'OPEN',
+    status              ENUM('OPEN','IN_PROGRESS','RESOLVED','VERIFIED','CLOSED','OVERDUE','DISMISSED') DEFAULT 'OPEN',
+    escalation_level    INT DEFAULT 1,
+    sla_hours           INT DEFAULT 48,
+    escalated_at        TIMESTAMP NULL,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (mine_id) REFERENCES mines(id),
@@ -230,18 +237,22 @@ CREATE TABLE violations (
 
 -- 15. CORRECTIVE ACTIONS
 CREATE TABLE corrective_actions (
-    id                  INT PRIMARY KEY AUTO_INCREMENT,
-    violation_id        INT NOT NULL,
-    assigned_to         INT NOT NULL,
-    action_description  TEXT NOT NULL,
-    deadline            DATE NOT NULL,
-    submitted_at        DATETIME NULL,
-    verified_by         INT NULL,
-    verified_at         DATETIME NULL,
-    escalation_level    INT DEFAULT 0,
-    status              ENUM('ASSIGNED','SUBMITTED','VERIFIED','CLOSED','OVERDUE') DEFAULT 'ASSIGNED',
-    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    id                      INT PRIMARY KEY AUTO_INCREMENT,
+    violation_id            INT NOT NULL,
+    assigned_to             INT NOT NULL,
+    action_description      TEXT NOT NULL,
+    deadline                DATE NOT NULL,
+    submitted_at            DATETIME NULL,
+    verified_by             INT NULL,
+    verified_at             DATETIME NULL,
+    escalation_level        INT DEFAULT 0,
+    status                  ENUM('ASSIGNED','SUBMITTED','VERIFIED','CLOSED','OVERDUE') DEFAULT 'ASSIGNED',
+    evidence_photo_path     VARCHAR(255) NULL,
+    resolution_gps_latitude  DECIMAL(10,6) NULL,
+    resolution_gps_longitude DECIMAL(10,6) NULL,
+    resolution_notes        TEXT NULL,
+    created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (violation_id) REFERENCES violations(id),
     FOREIGN KEY (assigned_to) REFERENCES users(id),
     FOREIGN KEY (verified_by) REFERENCES users(id)
@@ -291,22 +302,50 @@ CREATE TABLE environmental_data (
 
 -- 19. ATTENDANCE
 CREATE TABLE attendance (
-    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
-    mine_id         INT NOT NULL,
-    worker_id       INT NULL,
-    record_date     DATE NOT NULL,
-    status          ENUM('PRESENT','ABSENT','LEAVE','HALF_DAY') DEFAULT 'PRESENT',
-    shift           VARCHAR(20) DEFAULT 'GENERAL',
-    overtime_hours  DECIMAL(4,2) DEFAULT 0.00,
-    present_count   INT NULL,
-    total_count     INT NULL,
-    marked_by       INT NULL,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id                  BIGINT PRIMARY KEY AUTO_INCREMENT,
+    mine_id             INT NOT NULL,
+    worker_id           INT NULL,
+    record_date         DATE NOT NULL,
+    status              ENUM('PRESENT','ABSENT','LEAVE','HALF_DAY') DEFAULT 'PRESENT',
+    shift               VARCHAR(20) DEFAULT 'GENERAL',
+    overtime_hours      DECIMAL(4,2) DEFAULT 0.00,
+    present_count       INT NULL,
+    total_count         INT NULL,
+    marked_by           INT NULL,
+    checkin_lat         DECIMAL(10,6) NULL,
+    checkin_lng         DECIMAL(10,6) NULL,
+    distance_from_mine_m DECIMAL(8,2) NULL,
+    is_mock_location    BOOLEAN DEFAULT FALSE,
+    device_uptime_ms    BIGINT NULL,
+    client_reported_time TIMESTAMP NULL,
+    tamper_flag         BOOLEAN DEFAULT FALSE,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (mine_id) REFERENCES mines(id),
     FOREIGN KEY (worker_id) REFERENCES workers(id),
     FOREIGN KEY (marked_by) REFERENCES users(id),
     INDEX idx_attendance_mine_date (mine_id, record_date),
     INDEX idx_attendance_worker (worker_id)
+);
+
+-- 19b. ATTENDANCE CHECKIN EVENTS (Append-only telemetry log)
+CREATE TABLE attendance_checkin_events (
+    id                  BIGINT PRIMARY KEY AUTO_INCREMENT,
+    mine_id             INT NOT NULL,
+    worker_id           INT NOT NULL,
+    lat                 DECIMAL(10,6) NOT NULL,
+    lng                 DECIMAL(10,6) NOT NULL,
+    distance_from_mine_m DECIMAL(8,2) NOT NULL,
+    event_type          ENUM('CHECKIN','CHECKOUT') DEFAULT 'CHECKIN',
+    is_mock_location    BOOLEAN DEFAULT FALSE,
+    device_uptime_ms    BIGINT NULL,
+    client_reported_time TIMESTAMP NULL,
+    tamper_flag         BOOLEAN DEFAULT FALSE,
+    liveness_passed     BOOLEAN DEFAULT TRUE,
+    recorded_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (mine_id) REFERENCES mines(id) ON DELETE CASCADE,
+    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
+    INDEX idx_events_worker_time (worker_id, recorded_at),
+    INDEX idx_events_mine_time (mine_id, recorded_at)
 );
 
 -- 20. DOCUMENTS
@@ -365,6 +404,7 @@ CREATE TABLE risk_scores (
 CREATE TABLE anomalies (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
     mine_id         INT NOT NULL,
+    worker_id       INT NULL,
     anomaly_type    VARCHAR(100),
     description     TEXT,
     detected_value  DECIMAL(12,2),
@@ -372,7 +412,9 @@ CREATE TABLE anomalies (
     severity        ENUM('LOW','MEDIUM','HIGH','CRITICAL') DEFAULT 'MEDIUM',
     status          ENUM('NEW','ACKNOWLEDGED','RESOLVED') DEFAULT 'NEW',
     detected_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (mine_id) REFERENCES mines(id)
+    FOREIGN KEY (mine_id) REFERENCES mines(id),
+    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE SET NULL,
+    INDEX idx_anomalies_worker (worker_id)
 );
 
 -- 23. NOTIFICATIONS
@@ -417,6 +459,9 @@ CREATE TABLE grievances (
     status          ENUM('SUBMITTED','IN_REVIEW','RESOLVED','ESCALATED','CLOSED') DEFAULT 'SUBMITTED',
     assigned_to     INT NULL,
     resolution_notes TEXT NULL,
+    escalation_level INT DEFAULT 1,
+    sla_hours        INT DEFAULT 48,
+    escalated_at     TIMESTAMP NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE SET NULL,
@@ -457,6 +502,36 @@ CREATE TABLE ai_inspection_analyses (
     model_name         VARCHAR(100),
     created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE CASCADE
+);
+
+-- 28. UNDERGROUND MESH TELEMETRY NODES
+CREATE TABLE mesh_nodes (
+    id              INT PRIMARY KEY AUTO_INCREMENT,
+    mine_id         INT NOT NULL,
+    zone_id         INT NULL,
+    node_name       VARCHAR(100) NOT NULL,
+    hop_sequence    INT NOT NULL,
+    battery_pct     DECIMAL(5,2) DEFAULT 100.00,
+    status          ENUM('ONLINE','OFFLINE') DEFAULT 'ONLINE',
+    last_heartbeat  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (mine_id) REFERENCES mines(id) ON DELETE CASCADE,
+    FOREIGN KEY (zone_id) REFERENCES mine_zones(id) ON DELETE SET NULL,
+    INDEX idx_mesh_mine_hop (mine_id, hop_sequence)
+);
+
+-- 29. SOS RELAY LOGS
+CREATE TABLE sos_relay_logs (
+    id                  BIGINT PRIMARY KEY AUTO_INCREMENT,
+    incident_id         INT NOT NULL,
+    node_id             INT NOT NULL,
+    hop_number          INT NOT NULL,
+    latency_ms          INT NOT NULL,
+    signal_strength_pct DECIMAL(5,2) NOT NULL,
+    relayed_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE CASCADE,
+    FOREIGN KEY (node_id) REFERENCES mesh_nodes(id) ON DELETE CASCADE,
+    INDEX idx_relay_incident (incident_id)
 );
 
 SET FOREIGN_KEY_CHECKS = 1;

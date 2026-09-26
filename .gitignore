@@ -1,0 +1,39 @@
+# Environment & Secret variables
+.env
+.env.local
+.env.*.local
+backend/.env
+ai-service/.env
+
+# Python Virtual Environments & Caches
+.venv/
+env/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# Uploaded Media & Documents (keep fixtures)
+backend/uploads/*
+!backend/uploads/fixtures/
+!backend/uploads/.gitkeep
+uploads/*
+!uploads/.gitkeep
+
+# Go builds & binaries
+backend/main.exe
+backend/*.exe
+*.test
+*.prof
+
+# Logs & Temporary Files
+*.log
+scratch/
+qa_evidence/
+.vercel/
+.system_generated/
+.DS_Store
+Thumbs.db

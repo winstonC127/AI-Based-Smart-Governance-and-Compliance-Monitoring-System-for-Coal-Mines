@@ -1,0 +1,55 @@
+services:
+  # 1. CoalGuard Python AI Service
+  - type: web
+    name: coalguard-ai-service
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: ai-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GEMINI_API_KEY
+        sync: false
+
+  # 2. CoalGuard Go Backend
+  - type: web
+    name: coalguard-backend
+    runtime: go
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: go build -o coal-governance-backend .
+    startCommand: ./coal-governance-backend
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: AI_SERVICE_URL
+        fromService:
+          type: web
+          name: coalguard-ai-service
+          property: host
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_SSL_MODE
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRY_HOURS
+        value: "12"
+      - key: GEMINI_API_KEY
+        sync: false

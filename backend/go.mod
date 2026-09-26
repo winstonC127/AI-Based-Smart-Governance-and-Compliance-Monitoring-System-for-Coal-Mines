@@ -9,6 +9,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/joho/godotenv v1.5.1
 	github.com/jung-kurt/gofpdf/v2 v2.17.3
+	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/crypto v0.24.0
 )
 

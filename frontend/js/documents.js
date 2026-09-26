@@ -68,6 +68,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('ocr-back').addEventListener('click', closeOCRModal);
   document.getElementById('ocr-copy-btn').addEventListener('click', copyOCRTranscript);
 
+  // File Preview Modal Events
+  const previewClose = document.getElementById('file-preview-close');
+  if (previewClose) previewClose.addEventListener('click', closeFilePreviewModal);
+  const previewBack = document.getElementById('file-preview-back');
+  if (previewBack) previewBack.addEventListener('click', closeFilePreviewModal);
+
   // Load resources
   await loadMines();
   await loadContractorsDropdown();
@@ -248,13 +254,11 @@ function renderDocumentsTable(docs) {
     const riskClass = { LOW: 'badge-low', MEDIUM: 'badge-medium', HIGH: 'badge-high', CRITICAL: 'badge-critical' };
     const riskBadge = riskClass[d.risk_level] || 'badge-low';
 
-    const API_BASE = (window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com/').replace('/api', '');
-    const relativePath = d.file_path ? d.file_path.replace('./', '') : '';
-    const fileUrl = `${API_BASE}/${relativePath}`;
+    const fileUrl = resolveDocumentFileUrl(d.file_path);
 
     // Dynamic Role-Based Actions
     let actionButtons = `
-      <a href="${fileUrl}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none; padding:4px 8px; font-size:12px;">View File</a>
+      <button class="btn btn-secondary btn-sm" style="padding:4px 8px; font-size:12px;" onclick="viewDocumentFile(${d.id})">View File</button>
       <button class="btn btn-primary btn-sm" style="padding:4px 8px; font-size:12px;" onclick="open13FieldOCRModal(${d.id})">OCR Details</button>
     `;
 
@@ -369,7 +373,7 @@ async function handleUploadSubmit(e) {
   if (fileField.files[0]) formData.append('document', fileField.files[0]);
 
   const token = localStorage.getItem('cg_token');
-  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'https://ai-based-smart-governance-and-compliance-fc8y.onrender.com';
+  const API_BASE = window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8080/api';
 
   try {
     const res = await fetch(`${API_BASE}/documents`, {
@@ -570,6 +574,71 @@ function copyOCRTranscript() {
   }).catch(() => {
     showToast('Failed to copy text', 'error');
   });
+}
+
+// ----------------- File Preview Modal Handlers -----------------
+function resolveDocumentFileUrl(filePath) {
+  if (!filePath) return '';
+  if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('data:')) {
+    return filePath;
+  }
+  const API_BASE = (window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8080/api').replace('/api', '');
+  
+  let clean = filePath.replace(/\\/g, '/');
+  const uploadsIdx = clean.lastIndexOf('uploads/');
+  if (uploadsIdx !== -1) {
+    clean = clean.substring(uploadsIdx);
+  } else {
+    clean = clean.replace(/^\.\/?/, '');
+    if (!clean.startsWith('uploads/')) {
+      clean = 'uploads/' + clean;
+    }
+  }
+  return `${API_BASE}/${clean}`;
+}
+
+window.viewDocumentFile = function(id) {
+  const doc = allDocuments.find(d => d.id === id);
+  if (!doc || !doc.file_path) {
+    showToast('No file attached to this document record', 'warning');
+    return;
+  }
+
+  const fileUrl = resolveDocumentFileUrl(doc.file_path);
+  const modal = document.getElementById('file-preview-modal');
+  const imgEl = document.getElementById('preview-image');
+  const iframeEl = document.getElementById('preview-iframe');
+  const tabBtn = document.getElementById('preview-open-tab');
+  const titleEl = document.getElementById('preview-modal-title');
+
+  if (titleEl) {
+    titleEl.textContent = `Document Preview — ${doc.document_type || 'Certificate'} (${doc.certificate_number || 'DGMS'})`;
+  }
+  if (tabBtn) {
+    tabBtn.href = fileUrl;
+  }
+
+  const isPdf = doc.file_path.toLowerCase().endsWith('.pdf');
+  if (isPdf) {
+    imgEl.style.display = 'none';
+    iframeEl.style.display = 'block';
+    iframeEl.src = fileUrl;
+  } else {
+    iframeEl.style.display = 'none';
+    imgEl.style.display = 'block';
+    imgEl.src = fileUrl;
+  }
+
+  modal.classList.remove('hidden');
+};
+
+function closeFilePreviewModal() {
+  const modal = document.getElementById('file-preview-modal');
+  if (modal) modal.classList.add('hidden');
+  const iframeEl = document.getElementById('preview-iframe');
+  if (iframeEl) iframeEl.src = '';
+  const imgEl = document.getElementById('preview-image');
+  if (imgEl) imgEl.src = '';
 }
 
 // ----------------- Edit & Delete Handlers -----------------

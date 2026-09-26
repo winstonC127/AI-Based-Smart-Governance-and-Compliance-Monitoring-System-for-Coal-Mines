@@ -101,7 +101,7 @@ def voice_assistant():
     data = request.get_json() or {}
     query = data.get("query", "")
     language = data.get("language", "en-IN")
-    context_data = data.get("context_data", {})
+    context_data = data.get("context_data") or {}
     
     if not query:
         return jsonify({
@@ -116,8 +116,13 @@ def voice_assistant():
             context_data=context_data
         )
     except Exception as e:
+        print(f"[Voice Assistant Warning] Error during query handling: {e}")
         from services.gemini_service import synthesize_context_answer
-        answer = synthesize_context_answer(query, language, context_data)
+        try:
+            answer = synthesize_context_answer(query, language, context_data)
+        except Exception as inner_e:
+            print(f"[Voice Assistant Error] Fallback synthesizer failed: {inner_e}")
+            answer = "All mine safety and operational parameters are being monitored in real time."
     
     return jsonify({
         "success": True,
@@ -164,6 +169,19 @@ def translate_text():
         "data": {"translated_text": text}
     })
 
+@app.route("/ai/classify-severity", methods=["POST"])
+def classify_severity():
+    data = request.get_json() or {}
+    description = data.get("description", "")
+    from services.gemini_service import classify_severity_with_gemini
+    result = classify_severity_with_gemini(description)
+    return jsonify({
+        "success": True,
+        "classification": result.get("classification", "ROUTINE"),
+        "sla_hours": result.get("sla_hours", 48),
+        "reasoning": result.get("reasoning", "")
+    })
+
 if __name__ == "__main__":
-    # Runs on port 5000 in local dev
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)

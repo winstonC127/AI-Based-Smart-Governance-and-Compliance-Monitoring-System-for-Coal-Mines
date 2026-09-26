@@ -17,10 +17,27 @@ const GenesisHash = "00000000000000000000000000000000000000000000000000000000000
 
 var auditMutex sync.Mutex
 
+// CanonicalizeJSON ensures consistent key ordering and removes whitespace differences.
+func CanonicalizeJSON(str string) string {
+	if str == "" || str == "{}" {
+		return "{}"
+	}
+	var v interface{}
+	if err := json.Unmarshal([]byte(str), &v); err != nil {
+		return str
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return str
+	}
+	return string(b)
+}
+
 // ComputeAuditHash calculates the SHA-256 hash of an audit log entry.
 func ComputeAuditHash(prevHash string, userID int, action, module, recordID, detailsJSON, ip, timestamp string) string {
+	canonicalDetails := CanonicalizeJSON(detailsJSON)
 	payload := fmt.Sprintf("%s|%d|%s|%s|%s|%s|%s|%s",
-		prevHash, userID, action, module, recordID, detailsJSON, ip, timestamp)
+		prevHash, userID, action, module, recordID, canonicalDetails, ip, timestamp)
 	h := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(h[:])
 }
@@ -55,7 +72,7 @@ func LogAudit(userID int, action, module, recordID string, details map[string]in
 		prevHash = GenesisHash
 	}
 
-	now := time.Now().UTC()
+	now := time.Now()
 	timestampStr := now.Format("2006-01-02 15:04:05")
 
 	// 2. Compute SHA-256 hash for the current block

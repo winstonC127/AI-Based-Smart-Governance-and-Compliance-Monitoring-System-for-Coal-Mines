@@ -147,4 +147,39 @@ INSERT INTO documents (
  'Submit radar diagnostic report and bench survey log by due date.', '2026-09-18', 'DGMS Tech Circular No 04 of 2020', 'PENDING_REVIEW',
  6, NULL, NULL, NULL, NULL, NULL, NULL, 'VALID');
 
+-- 5. MINE ZONES
+INSERT INTO mine_zones (id, mine_id, zone_name, zone_type, latitude, longitude) VALUES
+(1, 1, 'Deep Seam Pit-4 / Sector B', 'UNDERGROUND_SEAM', 22.3595, 82.6892),
+(2, 1, 'Incline Haulage Roadway', 'INCLINE_HAULWAY', 22.3601, 82.6898),
+(3, 1, 'Central Ventilation Shaft', 'VENTILATION', 22.3608, 82.6905),
+(4, 2, 'Quarry Sector-3 Highwall', 'OPENCAST_FACE', 22.3167, 82.5833),
+(5, 10, 'Talcher Seam-1 Face', 'UNDERGROUND_SEAM', 20.9500, 85.2167);
+
+-- 28. UNDERGROUND MESH TELEMETRY NODES
+INSERT INTO mesh_nodes (mine_id, zone_id, node_name, hop_sequence, battery_pct, status) VALUES
+-- Mine 1: Gevra Opencast & Subsurface Pit
+(1, 1, 'NODE-01-SEAM-FACE',    1, 98.50, 'ONLINE'),
+(1, 2, 'NODE-02-INCLINE-WAY',   2, 94.00, 'ONLINE'),
+(1, 1, 'NODE-03-HAULAGE-XING',  3, 89.20, 'ONLINE'),
+(1, 3, 'NODE-04-VENT-SHAFT',    4, 96.00, 'ONLINE'),
+(1, 2, 'NODE-05-PIT-ENTRY',     5, 99.00, 'ONLINE'),
+(1, 3, 'NODE-06-SURFACE-GW',    6, 100.00, 'ONLINE'),
+
+-- Mine 2: Kusmunda Opencast Mine
+(2, 4, 'NODE-01-BENCH-FACE',    1, 97.00, 'ONLINE'),
+(2, 4, 'NODE-02-HAUL-RAMP',     2, 91.50, 'ONLINE'),
+(2, 4, 'NODE-03-CRUSHER-FEED',  3, 88.00, 'ONLINE'),
+(2, 4, 'NODE-04-SUB-STATION',   4, 95.50, 'ONLINE'),
+(2, 4, 'NODE-05-SECURITY-GATE', 5, 98.00, 'ONLINE'),
+(2, 4, 'NODE-06-SURFACE-GW',    6, 100.00, 'ONLINE'),
+
+-- Mine 10: Talcher Underground Mine
+(10, 5, 'NODE-01-WORKING-FACE', 1, 96.00, 'ONLINE'),
+(10, 5, 'NODE-02-HAULAGE-DRIFT',2, 92.00, 'ONLINE'),
+(10, 5, 'NODE-03-TRANSFER-POINT',3, 87.50, 'ONLINE'),
+(10, 5, 'NODE-04-SHAFT-BOTTOM', 4, 94.00, 'ONLINE'),
+(10, 5, 'NODE-05-PITHEAD-TOWER',5, 99.00, 'ONLINE'),
+(10, 5, 'NODE-06-SURFACE-GW',   6, 100.00, 'ONLINE');
+
+
 

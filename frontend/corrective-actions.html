@@ -62,16 +62,81 @@
   </div>
 </div>
 
+<!-- Resolve Action Modal with Photo Evidence & GPS -->
+<div class="modal-backdrop hidden" id="resolve-modal">
+  <div class="modal" style="max-width:540px;">
+    <div class="modal-header">
+      <h3 id="resolve-modal-title">Resolve Corrective Action</h3>
+      <button class="modal-close" id="resolve-close">&times;</button>
+    </div>
+    <form id="resolve-form" enctype="multipart/form-data">
+      <div class="modal-body" style="max-height: calc(100vh - 200px); overflow-y: auto;">
+        <input type="hidden" id="resolve-action-id" />
+        
+        <div class="form-group" style="background: var(--color-bg-light); padding: 10px; border-radius: 6px; margin-bottom: 15px;">
+          <div style="font-size: 13px;"><strong>Violation:</strong> <span id="resolve-vio-code" class="mono"></span></div>
+          <div style="font-size: 12.5px; color: var(--color-ink-muted); margin-top: 4px;" id="resolve-vio-desc"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="resolve-evidence">Evidence Photo (Camera / File) <span style="color:red;">*</span></label>
+          <input type="file" id="resolve-evidence" accept="image/*" capture="environment" required />
+          <div id="resolve-preview-container" class="hidden" style="margin-top: 8px;">
+            <img id="resolve-preview-img" src="" alt="Evidence Preview" style="max-width: 100%; max-height: 200px; border-radius: 6px; border: 1px solid var(--color-border);" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="resolve-lat">GPS Latitude <span style="color:red;">*</span></label>
+            <input type="number" step="0.000001" id="resolve-lat" required />
+          </div>
+          <div class="form-group">
+            <label for="resolve-lng">GPS Longitude <span style="color:red;">*</span></label>
+            <input type="number" step="0.000001" id="resolve-lng" required />
+          </div>
+          <div class="form-group" style="justify-content: flex-end; display: flex; align-items: flex-end;">
+            <button type="button" class="btn btn-secondary" id="btn-resolve-gps" style="width:100%; display:inline-flex; align-items:center; justify-content:center; gap:6px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              Auto-GPS
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="form-label-row">
+            <label for="resolve-notes">Resolution Notes / Action Taken</label>
+            <button type="button" class="btn-desc-mic" data-target="resolve-notes" title="Speak to dictate in selected language">
+              <span class="mic-icon" style="display:inline-flex; align-items:center;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></span> <span class="mic-status-text">Voice Input</span>
+            </button>
+          </div>
+          <textarea id="resolve-notes" placeholder="Describe physical remediation completed (e.g. ventilation duct repaired, water spray nozzles replaced)..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="resolve-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="resolve-submit" disabled>Submit Resolution</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Verify Resolution Modal -->
 <div class="modal-backdrop hidden" id="verify-modal">
-  <div class="modal">
+  <div class="modal" style="max-width:600px;">
     <div class="modal-header">
       <h3>Verify Action Resolution</h3>
       <button class="modal-close" id="verify-close">&times;</button>
     </div>
     <form id="verify-form">
-      <div class="modal-body">
+      <div class="modal-body" style="max-height: calc(100vh - 200px); overflow-y: auto;">
         <input type="hidden" id="verify-action-id" />
+
+        <!-- Resolution Evidence Container -->
+        <div id="verify-evidence-container" style="background: var(--color-bg-light); border: 1px solid var(--color-border); border-radius: 6px; padding: 12px; margin-bottom: 15px;">
+          <!-- Populated dynamically with evidence photo, GPS, and notes -->
+        </div>
+
         <div class="form-group">
           <div class="form-label-row">
             <label for="verify-remarks">Audit Feedback / Review Remarks</label>

@@ -9,6 +9,9 @@
 <link rel="stylesheet" href="css/forms.css" />
 <link rel="stylesheet" href="css/responsive.css" />
 <link rel="manifest" href="manifest.json" />
+<!-- MediaPipe Vision for Real Browser-Based Facial Liveness -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 </head>
 <body>
 
@@ -59,6 +62,10 @@
           <option value="HALF_DAY">Half Day</option>
         </select>
         <div class="spacer"></div>
+        <button id="btn-self-checkin" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:6px; background:var(--color-low);">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+          + Self Check-In (GPS)
+        </button>
         <button id="btn-add-worker" class="btn btn-secondary hidden">+ Register Worker</button>
         <button id="btn-mark-attendance" class="btn btn-primary hidden" style="display:inline-flex; align-items:center; gap:6px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -84,15 +91,205 @@
               <th>Overtime</th>
               <th>Date</th>
               <th>Status</th>
+              <th>GPS Geolocation &amp; Verification</th>
+              <th>Tamper Security</th>
               <th>Marked By</th>
             </tr>
           </thead>
           <tbody id="attendance-table-body">
-            <tr><td colspan="10" class="state-panel">Loading attendance roster...</td></tr>
+            <tr><td colspan="12" class="state-panel">Loading attendance roster...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Anti-Spoofing & Attendance Tamper Audit Card -->
+      <div class="card" style="margin-top:20px;">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-critical)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <h3 style="margin:0;">Anti-Spoofing &amp; Geofence Tamper Audit Log</h3>
+          </div>
+          <button id="btn-refresh-anomalies" class="btn btn-secondary" style="font-size:12px; padding:4px 10px;">Refresh Audit</button>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Detected Time</th>
+              <th>Worker</th>
+              <th>Mine Site</th>
+              <th>Spoof / Tamper Vector</th>
+              <th>Severity</th>
+              <th>Audit Log &amp; Rejection Details</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="anomalies-table-body">
+            <tr><td colspan="7" class="state-panel">Loading tamper audit log...</td></tr>
           </tbody>
         </table>
       </div>
     </main>
+  </div>
+</div>
+
+<!-- Spoof-Resistant Self Check-In Modal -->
+<div class="modal-backdrop hidden" id="self-checkin-modal">
+  <div class="modal" style="max-width:720px;">
+    <div class="modal-header">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-low)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+        <h3 style="margin:0;">Worker Self Check-In (Spoof-Resistant GPS)</h3>
+      </div>
+      <button class="modal-close" id="self-checkin-modal-close">&times;</button>
+    </div>
+    <form id="self-checkin-form">
+      <div class="modal-body">
+        <div style="background:var(--color-bg); padding:10px 14px; border-radius:var(--radius-sm); font-size:12.5px; color:var(--color-ink-muted); margin-bottom:14px; border-left:3px solid var(--color-ember);">
+          <strong>Per DGMS statutory safety regulations:</strong> Workers must check in within the verified 500m geofence of their assigned mine. Multi-vector anti-spoofing automatically validates device coordinates, provider integrity, clock skew, and kinematic velocity.
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="self-mine">Mine Site (Target Geofence)</label>
+            <select id="self-mine" required></select>
+          </div>
+          <div class="form-group">
+            <label for="self-worker">Select Worker</label>
+            <select id="self-worker" required></select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="self-lat">Check-in Latitude</label>
+            <input type="number" step="0.000001" id="self-lat" placeholder="e.g. 22.359500" required />
+          </div>
+          <div class="form-group">
+            <label for="self-lng">Check-in Longitude</label>
+            <input type="number" step="0.000001" id="self-lng" placeholder="e.g. 82.689200" required />
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <button type="button" class="btn btn-secondary" id="btn-acquire-gps" style="display:inline-flex; align-items:center; gap:6px; font-size:12px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+            Acquire Device GPS
+          </button>
+          <div id="gps-status-text" style="font-size:11.5px; color:var(--color-ink-muted);">Ready to verify location</div>
+        </div>
+
+        <!-- Live Distance Indicator -->
+        <div class="distance-indicator" id="distance-indicator-box">
+          <div>
+            <span style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--color-ink-muted);">Calculated Distance:</span>
+            <strong id="dist-calc-value" style="font-family:var(--font-mono); margin-left:6px;">-- m</strong>
+          </div>
+          <div id="geofence-status-tag" class="geo-tag manual">Select Mine &amp; Coordinates</div>
+        </div>
+
+        <!-- Testing & Spoof Vectors Simulation Suite -->
+        <div class="sim-suite-box">
+          <div class="sim-suite-title">
+            <span>🧪 Anti-Spoofing Simulation &amp; Attack Vectors Suite</span>
+            <span style="font-size:10.5px; color:var(--color-ink-muted); font-weight:normal;">(For Demonstration &amp; Evaluation)</span>
+          </div>
+          <div class="sim-btn-grid">
+            <button type="button" class="sim-btn" id="sim-inside-geofence">
+              <strong>📍 Inside Mine (~50m)</strong>
+              <span>Within 500m geofence</span>
+            </button>
+            <button type="button" class="sim-btn danger" id="sim-outside-geofence">
+              <strong>⚠️ Far Away (2.5km)</strong>
+              <span>Triggers Geofence Breach</span>
+            </button>
+            <button type="button" class="sim-btn danger" id="sim-mock-gps">
+              <strong>🚫 Mock GPS Provider</strong>
+              <span>Simulates Android Mock Location</span>
+            </button>
+            <button type="button" class="sim-btn danger" id="sim-velocity-jump">
+              <strong>⚡ Teleport (&gt;80 km/h)</strong>
+              <span>Triggers Velocity Anomaly</span>
+            </button>
+            <button type="button" class="sim-btn danger" id="sim-clock-skew">
+              <strong>🕒 Clock Skew (&gt;15 min)</strong>
+              <span>Simulates Manipulated Time</span>
+            </button>
+            <button type="button" class="sim-btn danger" id="sim-cluster-batch">
+              <strong>🤖 Scripted Batch (5x)</strong>
+              <span>Rapid automated check-in burst</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tier 2 Liveness Gesture Check (Real MediaPipe Facial Analysis) -->
+        <div style="margin-top:14px; border:1px solid var(--color-border); border-radius:var(--radius-sm); padding:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:600; margin:0;">
+              <input type="checkbox" id="toggle-liveness" checked />
+              <span>Enable Facial Liveness Check (Tier 2 Soft-Signal)</span>
+            </label>
+            <span class="badge badge-info" style="font-size:10px;">MediaPipe FaceMesh (Live)</span>
+          </div>
+
+          <div id="liveness-panel" class="liveness-container">
+            <div class="liveness-video-wrap">
+              <video id="liveness-video" autoplay playsinline muted></video>
+              <canvas id="liveness-canvas" class="liveness-canvas"></canvas>
+              <div id="liveness-oval" class="liveness-oval-guide"></div>
+            </div>
+
+            <!-- Step Indicators -->
+            <div class="liveness-step-grid">
+              <div class="liveness-step-pill" id="step-pill-face">1. Position Face</div>
+              <div class="liveness-step-pill" id="step-pill-blink">2. Blink Once</div>
+              <div class="liveness-step-pill" id="step-pill-left">3. Turn Left</div>
+              <div class="liveness-step-pill" id="step-pill-right">4. Turn Right</div>
+            </div>
+
+            <div class="liveness-prompt-text" id="liveness-prompt">
+              Click "Start Liveness Verification" to open camera
+            </div>
+
+            <!-- Dynamic Realtime Metrics Feedback -->
+            <div class="liveness-metrics" id="liveness-metrics">
+              <span>EAR: <strong id="metric-ear">--</strong></span>
+              <span>Yaw: <strong id="metric-yaw">--</strong></span>
+              <span>Face: <strong id="metric-face">None</strong></span>
+              <span>Status: <strong id="metric-status">Ready</strong></span>
+            </div>
+
+            <!-- Challenge Countdown Bar -->
+            <div class="liveness-progress-bar-wrap">
+              <div class="liveness-progress-bar" id="liveness-timer-bar"></div>
+            </div>
+
+            <div style="display:flex; justify-content:center; gap:10px; margin-top:12px;">
+              <button type="button" class="btn btn-primary" id="btn-start-liveness" style="font-size:12px; padding:6px 14px;">
+                📷 Start Liveness Verification
+              </button>
+              <button type="button" class="btn btn-secondary" id="btn-reset-liveness" style="font-size:12px; padding:6px 14px; display:none;">
+                🔄 Retry Challenge
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Status & Error Alert Banners -->
+        <div id="self-checkin-alert" class="checkin-alert-banner error hidden">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <div id="self-checkin-alert-text"></div>
+        </div>
+
+        <div id="self-checkin-success" class="checkin-alert-banner success hidden">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <div id="self-checkin-success-text"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="self-checkin-modal-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="self-checkin-submit-btn" style="background:var(--color-low);">Submit Verified Check-In</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -202,13 +399,13 @@
 
 <div id="toast-root"></div>
 
-<script src="js/config.js"></script>
-<script src="js/icons.js"></script>
-<script src="js/api.js"></script>
-<script src="js/notifications.js"></script>
-<script src="js/auth.js"></script>
-<script src="js/attendance.js"></script>
-<script src="js/pwa.js"></script>
-<script src="js/voice-assistant.js"></script>
+<script src="js/config.js?v=6"></script>
+<script src="js/icons.js?v=6"></script>
+<script src="js/api.js?v=6"></script>
+<script src="js/notifications.js?v=6"></script>
+<script src="js/auth.js?v=6"></script>
+<script src="js/attendance.js?v=6"></script>
+<script src="js/pwa.js?v=6"></script>
+<script src="js/voice-assistant.js?v=7"></script>
 </body>
 </html>

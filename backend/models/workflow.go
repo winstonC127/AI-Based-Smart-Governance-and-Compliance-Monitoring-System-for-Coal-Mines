@@ -15,7 +15,11 @@ type Inspection struct {
 	GPSLatitude    float64          `json:"gps_latitude"`
 	GPSLongitude   float64          `json:"gps_longitude"`
 	Remarks        string           `json:"remarks"`
-	Status         string           `json:"status"` // DRAFT, SUBMITTED, REVIEWED, APPROVED
+	Status         string           `json:"status"` // DRAFT, SUBMITTED, REVIEWED, APPROVED, VOIDED
+	VoidReason     *string          `json:"void_reason,omitempty"`
+	VoidedBy       *int             `json:"voided_by,omitempty"`
+	VoidedByName   string           `json:"voided_by_name,omitempty"`
+	VoidedAt       *time.Time       `json:"voided_at,omitempty"`
 	Items          []InspectionItem `json:"items,omitempty"`
 	CreatedAt      time.Time        `json:"created_at"`
 	UpdatedAt      time.Time        `json:"updated_at"`
@@ -58,32 +62,39 @@ type Violation struct {
 	ReportedByName    string    `json:"reported_by_name,omitempty"`
 	ResponsiblePerson *int      `json:"responsible_person"`
 	ResponsibleName   string    `json:"responsible_name,omitempty"`
-	Deadline          string    `json:"deadline"` // YYYY-MM-DD
-	Status            string    `json:"status"`   // OPEN, IN_PROGRESS, RESOLVED, VERIFIED, CLOSED, OVERDUE
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	Deadline          string     `json:"deadline"` // YYYY-MM-DD
+	Status            string     `json:"status"`   // OPEN, IN_PROGRESS, RESOLVED, VERIFIED, CLOSED, OVERDUE
+	EscalationLevel   int        `json:"escalation_level"`
+	SLAHours          int        `json:"sla_hours"`
+	EscalatedAt       *time.Time `json:"escalated_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 // CorrectiveAction represents a plan to remedy a violation.
 type CorrectiveAction struct {
-	ID                int        `json:"id"`
-	ViolationID       int        `json:"violation_id"`
-	ViolationCode     string     `json:"violation_code,omitempty"`
-	ViolationDesc     string     `json:"violation_desc,omitempty"`
-	MineName          string     `json:"mine_name,omitempty"`
-	Severity          string     `json:"severity,omitempty"`
-	AssignedTo        int        `json:"assigned_to"`
-	AssignedToName    string     `json:"assigned_to_name,omitempty"`
-	ActionDescription string     `json:"action_description"`
-	Deadline          string     `json:"deadline"` // YYYY-MM-DD
-	SubmittedAt       *time.Time `json:"submitted_at,omitempty"`
-	VerifiedBy        *int       `json:"verified_by,omitempty"`
-	VerifiedByName    string     `json:"verified_by_name,omitempty"`
-	VerifiedAt        *time.Time `json:"verified_at,omitempty"`
-	EscalationLevel   int        `json:"escalation_level"`
-	Status            string     `json:"status"` // ASSIGNED, SUBMITTED, VERIFIED, CLOSED, OVERDUE
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	ID                   int        `json:"id"`
+	ViolationID          int        `json:"violation_id"`
+	ViolationCode        string     `json:"violation_code,omitempty"`
+	ViolationDesc        string     `json:"violation_desc,omitempty"`
+	MineName             string     `json:"mine_name,omitempty"`
+	Severity             string     `json:"severity,omitempty"`
+	AssignedTo           int        `json:"assigned_to"`
+	AssignedToName       string     `json:"assigned_to_name,omitempty"`
+	ActionDescription    string     `json:"action_description"`
+	Deadline             string     `json:"deadline"` // YYYY-MM-DD
+	SubmittedAt          *time.Time `json:"submitted_at,omitempty"`
+	VerifiedBy           *int       `json:"verified_by,omitempty"`
+	VerifiedByName       string     `json:"verified_by_name,omitempty"`
+	VerifiedAt           *time.Time `json:"verified_at,omitempty"`
+	EscalationLevel      int        `json:"escalation_level"`
+	Status               string     `json:"status"` // ASSIGNED, SUBMITTED, VERIFIED, CLOSED, OVERDUE
+	EvidencePhotoPath    *string    `json:"evidence_photo_path,omitempty"`
+	ResolutionGPSLat     *float64   `json:"resolution_gps_latitude,omitempty"`
+	ResolutionGPSLng     *float64   `json:"resolution_gps_longitude,omitempty"`
+	ResolutionNotes      *string    `json:"resolution_notes,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // AIInspectionAnalysis represents a Gemini AI analysis of an inspection.
@@ -122,24 +133,51 @@ type Worker struct {
 
 // Attendance represents daily attendance for workers or mine totals.
 type Attendance struct {
-	ID            int64     `json:"id"`
-	MineID        int       `json:"mine_id"`
-	MineName      string    `json:"mine_name,omitempty"`
-	WorkerID      *int      `json:"worker_id"`
-	WorkerCode    string    `json:"worker_code,omitempty"`
-	WorkerName    string    `json:"worker_name,omitempty"`
-	Designation   string    `json:"designation,omitempty"`
-	ContractorID  *int      `json:"contractor_id,omitempty"`
-	ContractorName string   `json:"contractor_name,omitempty"`
-	RecordDate    string    `json:"record_date"` // YYYY-MM-DD
-	Status        string    `json:"status"`      // PRESENT, ABSENT, LEAVE, HALF_DAY
-	Shift         string    `json:"shift"`       // GENERAL, SHIFT_1, SHIFT_2, SHIFT_3
-	OvertimeHours float64   `json:"overtime_hours"`
-	PresentCount  *int      `json:"present_count,omitempty"`
-	TotalCount    *int      `json:"total_count,omitempty"`
-	MarkedBy      *int      `json:"marked_by,omitempty"`
-	MarkedByName  string    `json:"marked_by_name,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID                 int64      `json:"id"`
+	MineID             int        `json:"mine_id"`
+	MineName           string     `json:"mine_name,omitempty"`
+	WorkerID           *int       `json:"worker_id"`
+	WorkerCode         string     `json:"worker_code,omitempty"`
+	WorkerName         string     `json:"worker_name,omitempty"`
+	Designation        string     `json:"designation,omitempty"`
+	ContractorID       *int       `json:"contractor_id,omitempty"`
+	ContractorName     string     `json:"contractor_name,omitempty"`
+	RecordDate         string     `json:"record_date"` // YYYY-MM-DD
+	Status             string     `json:"status"`      // PRESENT, ABSENT, LEAVE, HALF_DAY
+	Shift              string     `json:"shift"`       // GENERAL, SHIFT_1, SHIFT_2, SHIFT_3
+	OvertimeHours      float64    `json:"overtime_hours"`
+	PresentCount       *int       `json:"present_count,omitempty"`
+	TotalCount         *int       `json:"total_count,omitempty"`
+	MarkedBy           *int       `json:"marked_by,omitempty"`
+	MarkedByName       string     `json:"marked_by_name,omitempty"`
+	CheckinLat         *float64   `json:"checkin_lat,omitempty"`
+	CheckinLng         *float64   `json:"checkin_lng,omitempty"`
+	DistanceFromMineM  *float64   `json:"distance_from_mine_m,omitempty"`
+	IsMockLocation     bool       `json:"is_mock_location"`
+	DeviceUptimeMs     *int64     `json:"device_uptime_ms,omitempty"`
+	ClientReportedTime *time.Time `json:"client_reported_time,omitempty"`
+	TamperFlag         bool       `json:"tamper_flag"`
+	CreatedAt          time.Time  `json:"created_at"`
+}
+
+// AttendanceCheckinEvent represents an individual append-only checkin/checkout telemetry event.
+type AttendanceCheckinEvent struct {
+	ID                 int64      `json:"id"`
+	MineID             int        `json:"mine_id"`
+	MineName           string     `json:"mine_name,omitempty"`
+	WorkerID           int        `json:"worker_id"`
+	WorkerCode         string     `json:"worker_code,omitempty"`
+	WorkerName         string     `json:"worker_name,omitempty"`
+	Lat                float64    `json:"lat"`
+	Lng                float64    `json:"lng"`
+	DistanceFromMineM  float64    `json:"distance_from_mine_m"`
+	EventType          string     `json:"event_type"` // CHECKIN, CHECKOUT
+	IsMockLocation     bool       `json:"is_mock_location"`
+	DeviceUptimeMs     *int64     `json:"device_uptime_ms,omitempty"`
+	ClientReportedTime *time.Time `json:"client_reported_time,omitempty"`
+	TamperFlag         bool       `json:"tamper_flag"`
+	LivenessPassed     bool       `json:"liveness_passed"`
+	RecordedAt         time.Time  `json:"recorded_at"`
 }
 
 // Grievance represents a worker grievance or complaint.
@@ -152,12 +190,15 @@ type Grievance struct {
 	MineName        string    `json:"mine_name,omitempty"`
 	Category        string    `json:"category"` // Safety, Compensation, Working Conditions, Harassment, Equipment, Other
 	Description     string    `json:"description"`
-	Status          string    `json:"status"` // SUBMITTED, IN_REVIEW, RESOLVED, ESCALATED, CLOSED
-	AssignedTo      *int      `json:"assigned_to"`
-	AssignedToName  string    `json:"assigned_to_name,omitempty"`
-	ResolutionNotes string    `json:"resolution_notes,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	Status          string     `json:"status"` // SUBMITTED, IN_REVIEW, RESOLVED, ESCALATED, CLOSED
+	EscalationLevel int        `json:"escalation_level"`
+	SLAHours        int        `json:"sla_hours"`
+	EscalatedAt     *time.Time `json:"escalated_at,omitempty"`
+	AssignedTo      *int       `json:"assigned_to"`
+	AssignedToName  string     `json:"assigned_to_name,omitempty"`
+	ResolutionNotes string     `json:"resolution_notes,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 // Contractor represents a contracted service vendor.
@@ -223,4 +264,22 @@ type AuditLog struct {
 	CreatedAt  time.Time              `json:"created_at"`
 	IsTampered bool                   `json:"is_tampered,omitempty"`
 }
+
+// Anomaly represents an operational, environmental, or attendance tamper anomaly.
+type Anomaly struct {
+	ID            int64     `json:"id"`
+	MineID        int       `json:"mine_id"`
+	MineName      string    `json:"mine_name,omitempty"`
+	WorkerID      *int      `json:"worker_id,omitempty"`
+	WorkerName    string    `json:"worker_name,omitempty"`
+	WorkerCode    string    `json:"worker_code,omitempty"`
+	AnomalyType   string    `json:"anomaly_type"`
+	Description   string    `json:"description"`
+	DetectedValue *float64  `json:"detected_value,omitempty"`
+	ExpectedValue *float64  `json:"expected_value,omitempty"`
+	Severity      string    `json:"severity"` // LOW, MEDIUM, HIGH, CRITICAL
+	Status        string    `json:"status"`   // NEW, ACKNOWLEDGED, RESOLVED
+	DetectedAt    time.Time `json:"detected_at"`
+}
+
 

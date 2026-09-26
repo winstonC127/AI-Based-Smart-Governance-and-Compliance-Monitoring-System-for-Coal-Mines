@@ -4,10 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Violations — Coal Governance Platform</title>
-<link rel="stylesheet" href="css/style.css" />
-<link rel="stylesheet" href="css/dashboard.css" />
-<link rel="stylesheet" href="css/forms.css" />
-<link rel="stylesheet" href="css/responsive.css" />
+<link rel="stylesheet" href="css/style.css?v=3" />
+<link rel="stylesheet" href="css/dashboard.css?v=3" />
+<link rel="stylesheet" href="css/forms.css?v=3" />
+<link rel="stylesheet" href="css/responsive.css?v=3" />
   <link rel="manifest" href="manifest.json" />
 </head>
 <body>
@@ -44,7 +44,7 @@
         <button id="report-violation-btn" class="btn btn-danger hidden">+ Report Violation</button>
       </div>
 
-      <div class="card">
+      <div class="card card-table-wrapper">
         <table class="data-table">
           <thead>
             <tr>
@@ -53,6 +53,7 @@
               <th>Category</th>
               <th>Description</th>
               <th>Severity</th>
+              <th>SLA &amp; Escalation</th>
               <th>Reported By</th>
               <th>Assignee</th>
               <th>Deadline</th>
@@ -61,7 +62,7 @@
             </tr>
           </thead>
           <tbody id="violations-table-body">
-            <tr><td colspan="10" class="state-panel">Loading violations...</td></tr>
+            <tr><td colspan="11" class="state-panel">Loading violations...</td></tr>
           </tbody>
         </table>
       </div>
@@ -161,13 +162,13 @@
 
 <div id="toast-root"></div>
 
-<script src="js/config.js"></script>
-<script src="js/icons.js"></script>
-<script src="js/api.js"></script>
-<script src="js/notifications.js"></script>
-<script src="js/auth.js"></script>
-<script src="js/violations.js"></script>
-<script src="js/pwa.js"></script>
-<script src="js/voice-assistant.js"></script>
+<script src="js/config.js?v=3"></script>
+<script src="js/icons.js?v=3"></script>
+<script src="js/api.js?v=3"></script>
+<script src="js/notifications.js?v=3"></script>
+<script src="js/auth.js?v=3"></script>
+<script src="js/violations.js?v=3"></script>
+<script src="js/pwa.js?v=3"></script>
+<script src="js/voice-assistant.js?v=7"></script>
 </body>
 </html>
