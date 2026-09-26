@@ -638,7 +638,7 @@ func generateEscalationNotifications(violationID int, violationCode, severity st
 	defer rows.Close()
 
 	title := fmt.Sprintf("ESCALATION LEVEL %d: Overdue %s Violation", level, severity)
-	message := fmt.Sprintf("Violation %s is overdue and has been escalated to Level %d. Immediate review required.", violationCode, level)
+	message := fmt.Sprintf("Violation %s (ID #%d) is overdue and has been escalated to Level %d. Immediate review required.", violationCode, violationID, level)
 
 	for rows.Next() {
 		var uid int

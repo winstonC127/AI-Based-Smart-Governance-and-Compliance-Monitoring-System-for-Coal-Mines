@@ -1,11 +1,15 @@
 package database
 
 import (
+	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"log"
+	"net/url"
+	"strings"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 
 	"coal-governance-backend/config"
@@ -14,10 +18,47 @@ import (
 // DB is the shared, pooled MySQL connection used across the application.
 var DB *sql.DB
 
+// parseDatabaseURL converts mysql://user:pass@host:port/dbname to go-sql-driver DSN
+func parseDatabaseURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	user := u.User.Username()
+	password, _ := u.User.Password()
+	host := u.Host
+	dbName := strings.TrimPrefix(u.Path, "/")
+	
+	return fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true&charset=utf8mb4&loc=Local&tls=custom",
+		user, password, host, dbName)
+}
+
 // Connect opens a connection pool to MySQL and verifies it with a ping.
 func Connect(cfg *config.Config) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&loc=Local",
-		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
+	// Register custom TLS config with InsecureSkipVerify for cloud-hosted MySQL (Aiven, Render, etc.)
+	_ = mysql.RegisterTLSConfig("custom", &tls.Config{
+		InsecureSkipVerify: true,
+	})
+
+	var dsn string
+	if cfg.DatabaseURL != "" {
+		dsn = parseDatabaseURL(cfg.DatabaseURL)
+	} else {
+		sslParam := ""
+		if cfg.DBSSLMode != "" {
+			if cfg.DBSSLMode == "require" || cfg.DBSSLMode == "true" || cfg.DBSSLMode == "skip-verify" {
+				sslParam = "&tls=custom"
+			} else {
+				sslParam = "&tls=" + cfg.DBSSLMode
+			}
+		} else if cfg.DBHost != "127.0.0.1" && cfg.DBHost != "localhost" && cfg.DBHost != "mysql" {
+			// Remote cloud database: default to custom TLS with skip-verify
+			sslParam = "&tls=custom"
+		}
+
+		dsn = fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&loc=Local%s",
+			cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName, sslParam)
+	}
 
 	var err error
 	DB, err = sql.Open("mysql", dsn)

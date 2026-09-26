@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -36,25 +37,48 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
+	// Root health check endpoint for cloud orchestrators (Render, Kubernetes, etc.)
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status":  "healthy",
+			"service": "CoalGuard AI Governance Backend",
+			"time":    time.Now().UTC().Format(time.RFC3339),
+		})
+	})
+
 	routes.RegisterRoutes(router, cfg)
 
-	// Serve uploaded evidence photos and documents statically
-	router.Static("/uploads", "./uploads")
+	// Ensure upload directory exists
+	_ = os.MkdirAll(cfg.UploadDir, 0755)
 
-	// Serve frontend directly from Go backend for single-port convenience
-	router.StaticFile("/", "../frontend/index.html")
-	router.StaticFile("/index.html", "../frontend/index.html")
-	router.StaticFile("/login.html", "../frontend/login.html")
-	router.StaticFile("/inspections.html", "../frontend/inspections.html")
-	router.StaticFile("/violations.html", "../frontend/violations.html")
-	router.StaticFile("/dashboard.html", "../frontend/dashboard.html")
-	router.StaticFile("/mines.html", "../frontend/mines.html")
-	router.StaticFile("/analytics.html", "../frontend/analytics.html")
-	router.StaticFile("/corrective-actions.html", "../frontend/corrective-actions.html")
-	router.StaticFile("/compliance.html", "../frontend/compliance.html")
-	router.Static("/js", "../frontend/js")
-	router.Static("/css", "../frontend/css")
-	router.Static("/assets", "../frontend/assets")
+	// Serve uploaded evidence photos and documents statically
+	router.Static("/uploads", cfg.UploadDir)
+
+	// Serve frontend directly if present (convenient for single-port / local runs)
+	if _, err := os.Stat("../frontend/index.html"); err == nil {
+		router.StaticFile("/", "../frontend/index.html")
+		router.StaticFile("/index.html", "../frontend/index.html")
+		router.StaticFile("/login.html", "../frontend/login.html")
+		router.StaticFile("/inspections.html", "../frontend/inspections.html")
+		router.StaticFile("/violations.html", "../frontend/violations.html")
+		router.StaticFile("/dashboard.html", "../frontend/dashboard.html")
+		router.StaticFile("/mines.html", "../frontend/mines.html")
+		router.StaticFile("/analytics.html", "../frontend/analytics.html")
+		router.StaticFile("/corrective-actions.html", "../frontend/corrective-actions.html")
+		router.StaticFile("/compliance.html", "../frontend/compliance.html")
+		router.Static("/js", "../frontend/js")
+		router.Static("/css", "../frontend/css")
+		router.Static("/assets", "../frontend/assets")
+	} else {
+		router.GET("/", func(c *gin.Context) {
+			c.JSON(200, gin.H{
+				"service":   "CoalGuard AI Governance Backend",
+				"status":    "online",
+				"health":    "/health",
+				"api_health": "/api/health",
+			})
+		})
+	}
 
 	log.Printf("Coal Governance backend starting on port %s\n", cfg.AppPort)
 	if err := router.Run(":" + cfg.AppPort); err != nil {

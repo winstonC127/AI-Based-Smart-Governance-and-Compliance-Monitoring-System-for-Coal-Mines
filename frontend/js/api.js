@@ -4,7 +4,10 @@
  * This module normalizes that so callers can just `await api.get(...)`.
  */
 const API = (() => {
-  const BASE_URL = window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8080/api';
+  function getBaseUrl() {
+    const raw = window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8080/api';
+    return raw.replace(/\/+$/, '');
+  }
 
   function getToken() {
     return localStorage.getItem('cg_token');
@@ -15,9 +18,13 @@ const API = (() => {
     const token = getToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
+    const baseUrl = getBaseUrl();
+    const cleanPath = path.startsWith('/') ? path : '/' + path;
+    const url = `${baseUrl}${cleanPath}`;
+
     let res;
     try {
-      res = await fetch(`${BASE_URL}${path}`, {
+      res = await fetch(url, {
         method,
         headers,
         body: body ? JSON.stringify(body) : undefined,

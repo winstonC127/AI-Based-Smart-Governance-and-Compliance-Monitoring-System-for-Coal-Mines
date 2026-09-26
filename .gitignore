@@ -32,6 +32,8 @@ backend/*.exe
 # Logs & Temporary Files
 *.log
 scratch/
+qa_evidence/
+.vercel/
 .system_generated/
 .DS_Store
 Thumbs.db

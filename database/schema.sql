@@ -220,7 +220,7 @@ CREATE TABLE violations (
     reported_by         INT NOT NULL,
     responsible_person  INT NULL,
     deadline            DATE,
-    status              ENUM('OPEN','IN_PROGRESS','RESOLVED','VERIFIED','CLOSED','OVERDUE') DEFAULT 'OPEN',
+    status              ENUM('OPEN','IN_PROGRESS','RESOLVED','VERIFIED','CLOSED','OVERDUE','DISMISSED') DEFAULT 'OPEN',
     escalation_level    INT DEFAULT 1,
     sla_hours           INT DEFAULT 48,
     escalated_at        TIMESTAMP NULL,

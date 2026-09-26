@@ -10,14 +10,16 @@ import (
 
 // Config holds all environment-driven application settings.
 type Config struct {
-	AppPort      string
-	DBHost       string
-	DBPort       string
-	DBUser       string
-	DBPassword   string
-	DBName       string
-	JWTSecret    string
-	JWTExpiryHrs string
+	AppPort         string
+	DBHost          string
+	DBPort          string
+	DBUser          string
+	DBPassword      string
+	DBName          string
+	DBSSLMode       string
+	DatabaseURL     string
+	JWTSecret       string
+	JWTExpiryHrs    string
 	UploadDir       string
 	AIServiceURL    string
 	SLACronSchedule string
@@ -39,12 +41,14 @@ func Load() *Config {
 	}
 
 	cfg := &Config{
-		AppPort:         getEnv("APP_PORT", "8080"),
+		AppPort:         getEnv("PORT", getEnv("APP_PORT", "8080")),
 		DBHost:          getEnv("DB_HOST", "127.0.0.1"),
 		DBPort:          getEnv("DB_PORT", "3306"),
 		DBUser:          getEnv("DB_USER", "root"),
 		DBPassword:      getEnv("DB_PASSWORD", ""),
 		DBName:          getEnv("DB_NAME", "coal_governance"),
+		DBSSLMode:       getEnv("DB_SSL_MODE", ""),
+		DatabaseURL:     getEnv("DATABASE_URL", ""),
 		JWTSecret:       getEnv("JWT_SECRET", "CHANGE_ME_IN_PRODUCTION"),
 		JWTExpiryHrs:    getEnv("JWT_EXPIRY_HOURS", "12"),
 		UploadDir:       getEnv("UPLOAD_DIR", "./uploads"),

@@ -155,6 +155,7 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config) {
 				violations.POST("", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), violationController.CreateViolation)
 				violations.PUT("/:id", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), violationController.UpdateViolation)
 				violations.PUT("/:id/assign", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), violationController.AssignViolation)
+				violations.PUT("/:id/dismiss", middleware.RequireRoles(models.RoleMineManager, models.RoleSafetyOfficer, models.RoleSuperAdmin), violationController.DismissViolation)
 				violations.POST("/check-escalations", violationController.CheckSLAs)
 			}
 

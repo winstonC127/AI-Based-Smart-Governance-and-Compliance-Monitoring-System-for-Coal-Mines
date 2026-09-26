@@ -878,12 +878,16 @@ func callAIServiceAnalyze(aiServiceURL string, payload map[string]interface{}) (
 }
 
 func getFallbackAIAnalysis(statusMsg string) map[string]interface{} {
+	summary := "Statutory inspection observation recorded. DGMS compliance rules evaluated."
+	if statusMsg != "" {
+		summary = fmt.Sprintf("%s (%s)", summary, statusMsg)
+	}
 	return map[string]interface{}{
 		"category":           "Occupational Safety & Compliance",
 		"severity":           "MEDIUM",
 		"risk_level":         "MEDIUM",
 		"risk_score":         55,
-		"summary":            "Statutory inspection observation recorded. DGMS compliance rules evaluated.",
+		"summary":            summary,
 		"reasoning":          "Statutory evaluation under Coal Mines Regulations (CMR) 2017 classifies this finding as Medium risk requiring scheduled verification.",
 		"recommended_action": "1. Issue standard statutory compliance notice to site supervisor.\n2. Complete scheduled maintenance/remediation within 7 business days.\n3. Submit photographic compliance proof for safety officer verification.",
 		"recurring_issue":    false,

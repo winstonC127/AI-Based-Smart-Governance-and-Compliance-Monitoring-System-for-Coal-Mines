@@ -9,6 +9,9 @@
 <link rel="stylesheet" href="css/forms.css" />
 <link rel="stylesheet" href="css/responsive.css" />
 <link rel="manifest" href="manifest.json" />
+<!-- MediaPipe Vision for Real Browser-Based Facial Liveness -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 </head>
 <body>
 
@@ -218,28 +221,55 @@
           </div>
         </div>
 
-        <!-- Tier 2 Liveness Gesture Check (Stretch Feature) -->
+        <!-- Tier 2 Liveness Gesture Check (Real MediaPipe Facial Analysis) -->
         <div style="margin-top:14px; border:1px solid var(--color-border); border-radius:var(--radius-sm); padding:12px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:600; margin:0;">
               <input type="checkbox" id="toggle-liveness" checked />
               <span>Enable Facial Liveness Check (Tier 2 Soft-Signal)</span>
             </label>
-            <span class="badge badge-info" style="font-size:10px;">MediaPipe / Vision Gesture</span>
+            <span class="badge badge-info" style="font-size:10px;">MediaPipe FaceMesh (Live)</span>
           </div>
 
           <div id="liveness-panel" class="liveness-container">
             <div class="liveness-video-wrap">
               <video id="liveness-video" autoplay playsinline muted></video>
-              <div class="liveness-oval-guide"></div>
+              <canvas id="liveness-canvas" class="liveness-canvas"></canvas>
+              <div id="liveness-oval" class="liveness-oval-guide"></div>
             </div>
+
+            <!-- Step Indicators -->
+            <div class="liveness-step-grid">
+              <div class="liveness-step-pill" id="step-pill-face">1. Position Face</div>
+              <div class="liveness-step-pill" id="step-pill-blink">2. Blink Once</div>
+              <div class="liveness-step-pill" id="step-pill-left">3. Turn Left</div>
+              <div class="liveness-step-pill" id="step-pill-right">4. Turn Right</div>
+            </div>
+
             <div class="liveness-prompt-text" id="liveness-prompt">
-              👁️ Challenge: Please blink twice or turn head slightly left
+              Click "Start Liveness Verification" to open camera
             </div>
-            <div style="display:flex; justify-content:center; gap:10px; margin-top:10px;">
-              <button type="button" class="btn btn-secondary" id="btn-start-camera" style="font-size:11.5px; padding:4px 10px;">Start Camera</button>
-              <button type="button" class="btn btn-secondary" id="btn-pass-liveness" style="font-size:11.5px; padding:4px 10px; background:#065f46; color:#fff; border-color:#059669;">Simulate Gesture Pass</button>
-              <button type="button" class="btn btn-secondary" id="btn-fail-liveness" style="font-size:11.5px; padding:4px 10px; background:#881337; color:#fff; border-color:#be123c;">Simulate Gesture Fail</button>
+
+            <!-- Dynamic Realtime Metrics Feedback -->
+            <div class="liveness-metrics" id="liveness-metrics">
+              <span>EAR: <strong id="metric-ear">--</strong></span>
+              <span>Yaw: <strong id="metric-yaw">--</strong></span>
+              <span>Face: <strong id="metric-face">None</strong></span>
+              <span>Status: <strong id="metric-status">Ready</strong></span>
+            </div>
+
+            <!-- Challenge Countdown Bar -->
+            <div class="liveness-progress-bar-wrap">
+              <div class="liveness-progress-bar" id="liveness-timer-bar"></div>
+            </div>
+
+            <div style="display:flex; justify-content:center; gap:10px; margin-top:12px;">
+              <button type="button" class="btn btn-primary" id="btn-start-liveness" style="font-size:12px; padding:6px 14px;">
+                📷 Start Liveness Verification
+              </button>
+              <button type="button" class="btn btn-secondary" id="btn-reset-liveness" style="font-size:12px; padding:6px 14px; display:none;">
+                🔄 Retry Challenge
+              </button>
             </div>
           </div>
         </div>
@@ -369,13 +399,13 @@
 
 <div id="toast-root"></div>
 
-<script src="js/config.js"></script>
-<script src="js/icons.js"></script>
-<script src="js/api.js"></script>
-<script src="js/notifications.js"></script>
-<script src="js/auth.js"></script>
-<script src="js/attendance.js"></script>
-<script src="js/pwa.js"></script>
-<script src="js/voice-assistant.js"></script>
+<script src="js/config.js?v=6"></script>
+<script src="js/icons.js?v=6"></script>
+<script src="js/api.js?v=6"></script>
+<script src="js/notifications.js?v=6"></script>
+<script src="js/auth.js?v=6"></script>
+<script src="js/attendance.js?v=6"></script>
+<script src="js/pwa.js?v=6"></script>
+<script src="js/voice-assistant.js?v=7"></script>
 </body>
 </html>

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/", "destination": "/frontend/index.html" },
+    { "source": "/login", "destination": "/frontend/login.html" },
+    { "source": "/dashboard", "destination": "/frontend/dashboard.html" },
+    { "source": "/inspections", "destination": "/frontend/inspections.html" },
+    { "source": "/violations", "destination": "/frontend/violations.html" },
+    { "source": "/corrective-actions", "destination": "/frontend/corrective-actions.html" },
+    { "source": "/attendance", "destination": "/frontend/attendance.html" },
+    { "source": "/mines", "destination": "/frontend/mines.html" },
+    { "source": "/compliance", "destination": "/frontend/compliance.html" },
+    { "source": "/analytics", "destination": "/frontend/analytics.html" },
+    { "source": "/reports", "destination": "/frontend/reports.html" },
+    { "source": "/incidents", "destination": "/frontend/incidents.html" },
+    { "source": "/documents", "destination": "/frontend/documents.html" },
+    { "source": "/contractors", "destination": "/frontend/contractors.html" },
+    { "source": "/grievances", "destination": "/frontend/grievances.html" },
+    { "source": "/environmental", "destination": "/frontend/environmental.html" },
+    { "source": "/production", "destination": "/frontend/production.html" },
+    { "source": "/users", "destination": "/frontend/users.html" },
+    { "source": "/audit-logs", "destination": "/frontend/audit-logs.html" },
+    { "source": "/simulation-control", "destination": "/frontend/simulation-control.html" },
+    { "source": "/notifications", "destination": "/frontend/notifications.html" },
+    { "source": "/(.*)", "destination": "/frontend/$1" }
+  ]
+}

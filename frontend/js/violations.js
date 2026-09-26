@@ -309,15 +309,15 @@ async function handleAssignSubmit(e) {
 
 async function dismissViolation(id, code) {
   const reason = prompt(`Reason for dismissing/closing Violation ${code} (e.g. false alarm / duplicate / mistaken report):`);
-  if (!reason || reason.trim().length < 5) {
+  if (!reason || reason.trim().length < 10) {
     if (reason !== null) {
-      showToast('A reason of at least 5 characters is required to dismiss', 'warning');
+      showToast('A reason of at least 10 characters is required to dismiss', 'warning');
     }
     return;
   }
   try {
-    await API.put(`/violations/${id}`, { status: 'CLOSED' });
-    showToast(`Violation ${code} dismissed and closed successfully`, 'success');
+    await API.put(`/violations/${id}/dismiss`, { reason: reason.trim() });
+    showToast(`Violation ${code} dismissed successfully`, 'success');
     await loadViolations();
   } catch (err) {
     showError(err);
