@@ -1,11 +1,22 @@
 /**
- * dashboard.js — loads KPI summary and renders the top cards + charts.
+ * dashboard.js — loads KPI summary and renders the top cards, charts, and GIS map.
  */
 document.addEventListener('DOMContentLoaded', async () => {
   AUTH.guardPage();
   AUTH.renderShell('dashboard.html');
 
+  // Load KPI cards, table, charts, and map concurrently without blocking
+  await Promise.allSettled([
+    loadKpiSummary(),
+    loadMinesTable(),
+    loadAndRenderCharts(),
+    initDashboardMap()
+  ]);
+});
+
+async function loadKpiSummary() {
   const kpiGrid = document.getElementById('kpi-grid');
+  if (!kpiGrid) return;
 
   try {
     const summary = await API.get('/analytics/dashboard');
@@ -21,11 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (err) {
     kpiGrid.innerHTML = `<div class="state-panel error">Could not load dashboard summary: ${err.message}</div>`;
   }
-
-  await loadMinesTable();
-  await loadAndRenderCharts();
-  await initDashboardMap();
-});
+}
 
 function kpiCard(label, value, variant) {
   return `
@@ -42,7 +49,7 @@ async function loadMinesTable() {
 
   try {
     const mines = await API.get('/mines');
-    if (mines.length === 0) {
+    if (!Array.isArray(mines) || mines.length === 0) {
       tbody.innerHTML = `<tr><td colspan="6" class="state-panel">No mines found. Add one from the Mines page.</td></tr>`;
       return;
     }
@@ -78,18 +85,30 @@ async function loadAndRenderCharts() {
   };
 
   try {
-    chartsData = await API.get('/analytics/charts');
+    // 5-second timeout race to prevent UI freeze on slow networks
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Charts fetch timeout')), 5000)
+    );
+    const fetched = await Promise.race([API.get('/analytics/charts'), timeoutPromise]);
+    if (fetched && typeof fetched === 'object') {
+      chartsData = { ...chartsData, ...fetched };
+    }
   } catch (err) {
-    console.warn("Could not fetch charts data, rendering baseline demo charts:", err);
+    console.warn("Could not fetch charts data or timed out, rendering baseline demo charts:", err);
+  }
+
+  if (typeof Chart === 'undefined') {
+    console.warn("Chart.js library is not loaded yet.");
+    return;
   }
 
   // 1. Compliance Trend
   const compTrendCtx = document.getElementById('chart-compliance-trend')?.getContext('2d');
   if (compTrendCtx) {
-    let labels = chartsData.compliance_trend.map(p => p.month);
-    let data = chartsData.compliance_trend.map(p => p.rate);
+    const trendList = chartsData?.compliance_trend || [];
+    let labels = trendList.map(p => p.month);
+    let data = trendList.map(p => p.rate);
 
-    // Fallback baseline data if empty
     if (labels.length === 0) {
       labels = ['Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026', 'Jul 2026', 'Aug 2026'];
       data = [94.5, 96.2, 95.8, 97.4, 91.2, 93.5];
@@ -115,12 +134,13 @@ async function loadAndRenderCharts() {
   // 2. Violations by Category
   const vioCatCtx = document.getElementById('chart-violations-cat')?.getContext('2d');
   if (vioCatCtx) {
-    let labels = chartsData.violations_by_category.map(c => c.label);
-    let data = chartsData.violations_by_category.map(c => c.count);
+    const catList = chartsData?.violations_by_category || [];
+    let labels = catList.map(c => c.label);
+    let data = catList.map(c => c.count);
 
     if (labels.length === 0) {
-      labels = ['Safety', 'Environment', 'Labour', 'Production', 'Contractor'];
-      data = [12, 6, 8, 4, 3];
+      labels = ['Safety', 'Environmental', 'Labour', 'Production', 'Contractor'];
+      data = [12, 5, 8, 3, 7];
     }
 
     new Chart(vioCatCtx, {
@@ -128,24 +148,25 @@ async function loadAndRenderCharts() {
       data: {
         labels,
         datasets: [{
-          label: 'Open Violations',
+          label: 'Violations',
           data,
-          backgroundColor: '#C05621'
+          backgroundColor: '#B85D19'
         }]
       },
       options: { responsive: true, maintainAspectRatio: false }
     });
   }
 
-  // 3. Mine Risk Rankings (horizontal bar)
+  // 3. Mine Risk Rankings (Horizontal Bar)
   const mineRanksCtx = document.getElementById('chart-mine-ranks')?.getContext('2d');
   if (mineRanksCtx) {
-    let labels = chartsData.mine_risk_ranking.map(r => r.mine_name);
-    let data = chartsData.mine_risk_ranking.map(r => r.score);
+    const ranksList = chartsData?.mine_risk_ranking || [];
+    let labels = ranksList.map(m => m.mine_name);
+    let data = ranksList.map(m => m.score);
 
     if (labels.length === 0) {
-      labels = ['Gevra Opencast', 'Kusmunda Opencast', 'Dipka Opencast', 'Talcher Underground', 'Jayant Opencast'];
-      data = [82.5, 64.0, 48.2, 35.0, 24.5];
+      labels = ['Gevra Mine', 'Kusmunda', 'Dipka', 'Jayant', 'Nigahi'];
+      data = [74.5, 62.0, 48.2, 38.0, 22.5];
     }
 
     new Chart(mineRanksCtx, {
@@ -169,8 +190,9 @@ async function loadAndRenderCharts() {
   // 4. Corrective Actions Status (Doughnut)
   const caStatusCtx = document.getElementById('chart-corrective-status')?.getContext('2d');
   if (caStatusCtx) {
-    let labels = chartsData.corrective_actions_status.map(s => s.label);
-    let data = chartsData.corrective_actions_status.map(s => s.count);
+    const caList = chartsData?.corrective_actions_status || [];
+    let labels = caList.map(s => s.label);
+    let data = caList.map(s => s.count);
 
     if (labels.length === 0) {
       labels = ['Assigned', 'Submitted', 'Verified', 'Closed', 'Overdue'];
@@ -193,8 +215,9 @@ async function loadAndRenderCharts() {
   // 5. Inspections Trend
   const insTrendCtx = document.getElementById('chart-inspections-trend')?.getContext('2d');
   if (insTrendCtx) {
-    let labels = chartsData.inspections_trend.map(t => t.label);
-    let data = chartsData.inspections_trend.map(t => t.count);
+    const inspList = chartsData?.inspections_trend || [];
+    let labels = inspList.map(t => t.label);
+    let data = inspList.map(t => t.count);
 
     if (labels.length === 0) {
       labels = ['Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026', 'Jul 2026', 'Aug 2026'];
@@ -221,8 +244,9 @@ async function loadAndRenderCharts() {
   // 6. Risk Distribution (Pie)
   const riskDistCtx = document.getElementById('chart-risk-dist')?.getContext('2d');
   if (riskDistCtx) {
-    let labels = chartsData.risk_distribution.map(d => d.label);
-    let data = chartsData.risk_distribution.map(d => d.count);
+    const distList = chartsData?.risk_distribution || [];
+    let labels = distList.map(d => d.label);
+    let data = distList.map(d => d.count);
 
     if (labels.length === 0) {
       labels = ['Low Risk', 'Medium Risk', 'High Risk', 'Critical Risk'];
@@ -249,6 +273,8 @@ async function initDashboardMap() {
 
   try {
     const mines = await API.get('/mines');
+    if (!Array.isArray(mines)) return;
+
     const map = L.map('mines-map').setView([22.8, 83.5], 6);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -263,6 +289,8 @@ async function initDashboardMap() {
 
       const lat = parseFloat(m.latitude);
       const lng = parseFloat(m.longitude);
+      if (isNaN(lat) || isNaN(lng)) return;
+
       bounds.push([lat, lng]);
 
       let color = '#10b981'; // LOW
@@ -280,7 +308,8 @@ async function initDashboardMap() {
         fillOpacity: 0.9
       }).addTo(map);
 
-      const scoreDisplay = m.risk_score !== null && m.risk_score !== undefined ? m.risk_score.toFixed(1) : 'N/A';
+      const scoreNum = (m.risk_score !== null && m.risk_score !== undefined) ? Number(m.risk_score) : null;
+      const scoreDisplay = (scoreNum !== null && !isNaN(scoreNum)) ? scoreNum.toFixed(1) : 'N/A';
 
       const popupContent = `
         <div style="font-family:sans-serif; min-width:200px; padding:4px;">
@@ -318,4 +347,3 @@ async function initDashboardMap() {
     console.error('Failed to initialize dashboard GIS map:', err);
   }
 }
-

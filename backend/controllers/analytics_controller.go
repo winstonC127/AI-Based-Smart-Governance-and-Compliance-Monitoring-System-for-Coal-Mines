@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,8 +28,10 @@ func NewAnalyticsController(cfg *config.Config) *AnalyticsController {
 
 // GetChartsData returns aggregated records for the 7 Chart.js dashboard charts.
 func (ac *AnalyticsController) GetChartsData(c *gin.Context) {
-	// First update risk scores to keep charts live
-	_ = ac.RecalculateRiskForMines()
+	// Refresh risk scores asynchronously in background so chart queries return instantly (<50ms)
+	go func() {
+		_ = ac.RecalculateRiskForMines()
+	}()
 
 	// 1. Violations by Category
 	vioCatRows, err := database.DB.Query(`
@@ -176,8 +179,10 @@ func (ac *AnalyticsController) GetChartsData(c *gin.Context) {
 
 // GetRiskScores returns the computed risk scores and explanations.
 func (ac *AnalyticsController) GetRiskScores(c *gin.Context) {
-	// Re-run computation first to ensure freshness
-	_ = ac.RecalculateRiskForMines()
+	// Refresh risk scores in background if needed
+	go func() {
+		_ = ac.RecalculateRiskForMines()
+	}()
 
 	rows, err := database.DB.Query(`
 		SELECT r.id, r.mine_id, m.mine_name, r.score, r.classification, r.factors_json, r.computed_at
@@ -528,8 +533,9 @@ func (ac *AnalyticsController) RecalculateRiskForMines() error {
 		payload := map[string]interface{}{"stats": stats}
 		jsonBytes, _ := json.Marshal(payload)
 
-		// Call AI Flask service
-		aiURL := fmt.Sprintf("%s/predict-risk", ac.Cfg.AIServiceURL)
+		// Call AI Flask service with normalized URL
+		baseURL := strings.TrimRight(ac.Cfg.AIServiceURL, "/")
+		aiURL := fmt.Sprintf("%s/predict-risk", baseURL)
 		
 		var score float64
 		var classification string
