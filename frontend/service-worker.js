@@ -1,5 +1,5 @@
-const CACHE_NAME = 'coalguard-shell-v7';
-const DATA_CACHE_NAME = 'coalguard-data-v7';
+const CACHE_NAME = 'coalguard-shell-v8';
+const DATA_CACHE_NAME = 'coalguard-data-v8';
 
 // Static assets to cache for offline availability
 const FILES_TO_CACHE = [
@@ -112,7 +112,10 @@ self.addEventListener('fetch', (evt) => {
     }
   }
 
-  // Fallback to network first, then cache for other requests
+  // Bypass service worker for all API requests so they always reach the live backend directly
+  if (url.pathname.includes('/api/') || url.href.includes('/api/')) {
+    return;
+  }
   if (evt.request.mode !== 'navigate') {
     evt.respondWith(
       caches.match(evt.request).then((response) => {
