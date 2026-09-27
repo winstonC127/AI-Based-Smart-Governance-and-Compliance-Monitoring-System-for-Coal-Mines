@@ -23,8 +23,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('env-modal-cancel').addEventListener('click', closeEnvModal);
   document.getElementById('env-form').addEventListener('submit', handleEnvSubmit);
 
-  await loadMines();
-  await loadEnvData();
+  await Promise.all([
+    loadMines(),
+    loadEnvData()
+  ]);
 });
 
 async function loadMines() {

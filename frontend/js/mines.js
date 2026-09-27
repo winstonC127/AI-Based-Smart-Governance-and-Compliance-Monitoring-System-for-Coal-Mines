@@ -27,8 +27,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('filter-status').addEventListener('change', applyFilters);
   document.getElementById('search-input').addEventListener('input', applyFilters);
 
-  await loadSubsidiaries();
-  await loadMines();
+  await Promise.all([
+    loadSubsidiaries(),
+    loadMines()
+  ]);
   initMap();
 });
 

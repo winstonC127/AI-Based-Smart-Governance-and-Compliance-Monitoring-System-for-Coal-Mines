@@ -37,8 +37,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('g-mine').addEventListener('change', (e) => loadWorkersForMine(e.target.value));
 
-  await loadInitialData();
-  await loadGrievances();
+  await Promise.all([
+    loadInitialData(),
+    loadGrievances()
+  ]);
 });
 
 async function loadInitialData() {

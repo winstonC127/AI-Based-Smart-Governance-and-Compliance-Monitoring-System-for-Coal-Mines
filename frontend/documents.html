@@ -97,29 +97,84 @@
 }
 .ocr-field-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
 }
 .ocr-field-card {
   background: var(--color-bg-light, #f8fafc);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  padding: 8px 10px;
 }
 .ocr-field-label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   color: var(--color-ink-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
 }
 .ocr-field-value {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--color-ink);
   word-break: break-word;
+}
+.ocr-modal-split {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 16px;
+  align-items: stretch;
+}
+@media (max-width: 900px) {
+  .ocr-modal-split {
+    grid-template-columns: 1fr;
+  }
+}
+.ocr-preview-pane {
+  background: #0f172a;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  min-height: 480px;
+}
+.ocr-preview-header {
+  background: rgba(15, 23, 42, 0.95);
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.ocr-preview-header span {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+}
+.ocr-preview-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  overflow: auto;
+  position: relative;
+}
+.ocr-preview-content img {
+  max-width: 100%;
+  max-height: 540px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+.ocr-preview-content iframe {
+  width: 100%;
+  height: 540px;
+  border: none;
+  background: #ffffff;
+  border-radius: 4px;
 }
 </style>
 </head>
@@ -277,9 +332,15 @@
           </select>
         </div>
         <div class="form-group">
-          <label for="doc-file">Select Document / Certificate File (PNG, JPG, JPEG)</label>
+          <label for="doc-file">Select Document / Certificate File (PNG, JPG, JPEG, PDF)</label>
           <input type="file" id="doc-file" accept="image/*,application/pdf" required />
           <p class="hint">AI Multimodal OCR parses all 13 fields: Mine Name, Code, Dates, Inspector, Violations, Risk, and Corrective Actions.</p>
+          <div id="upload-preview-container" class="hidden" style="margin-top: 10px; padding: 12px; background: var(--color-bg-light); border: 1px dashed var(--color-border); border-radius: var(--radius-sm); text-align: center;">
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-ink-muted); margin-bottom: 6px; text-transform: uppercase;">Selected File Preview</div>
+            <img id="upload-preview-img" src="" alt="Selected Preview" style="max-height: 160px; max-width: 100%; object-fit: contain; border-radius: 4px; display: none; margin: 0 auto 6px auto; box-shadow: 0 2px 6px rgba(0,0,0,0.1);" />
+            <div id="upload-preview-pdf" style="display: none; padding: 12px; font-weight: 600; color: var(--color-brand); font-size: 13px;">PDF Document Attached</div>
+            <div id="upload-file-meta" style="font-size: 12px; color: var(--color-ink-muted);"></div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -436,72 +497,95 @@
 
 <!-- 13-Field OCR Card Inspector Modal -->
 <div class="modal-backdrop hidden" id="ocr-modal">
-  <div class="modal" style="max-width: 800px;">
+<div class="modal-backdrop hidden" id="ocr-modal">
+  <div class="modal" style="max-width: 1180px; width: 96%;">
     <div class="modal-header">
       <h3 id="ocr-modal-title">AI OCR 13-Field Extraction Inspector</h3>
       <button type="button" class="modal-close" id="ocr-close">&times;</button>
     </div>
-    <div class="modal-body">
-      <!-- 13 Extracted Fields Card Grid -->
-      <div class="ocr-field-grid">
-        <div class="ocr-field-card">
-          <div class="ocr-field-label">1. Mine Name</div>
-          <div class="ocr-field-value" id="ocr-m-name">-</div>
+    <div class="modal-body" style="padding: 16px;">
+      <div class="ocr-modal-split">
+        <!-- Left Pane: Uploaded Evidence File Viewer -->
+        <div class="ocr-preview-pane">
+          <div class="ocr-preview-header">
+            <span>Uploaded Evidence Document</span>
+            <a id="ocr-doc-open-tab" href="#" target="_blank" class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11.5px; text-decoration: none; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">
+              Full View &nearr;
+            </a>
+          </div>
+          <div class="ocr-preview-content" id="ocr-doc-preview-content">
+            <img id="ocr-doc-img" src="" alt="Certificate Evidence" style="display: none;" />
+            <iframe id="ocr-doc-iframe" src="" style="display: none;"></iframe>
+            <div id="ocr-doc-fallback" style="display: none; color: #94a3b8; text-align: center; padding: 20px;">
+              <p style="margin-bottom: 8px;">No image or PDF preview available directly.</p>
+              <a id="ocr-doc-download-btn" href="#" target="_blank" class="btn btn-secondary btn-sm">Download / Open Attachment</a>
+            </div>
+          </div>
         </div>
-        <div class="ocr-field-card">
-          <div class="ocr-field-label">2. Mine Code</div>
-          <div class="ocr-field-value mono" id="ocr-m-code">-</div>
-        </div>
-        <div class="ocr-field-card">
-          <div class="ocr-field-label">3. Document Type</div>
-          <div class="ocr-field-value" id="ocr-m-type">-</div>
-        </div>
-        <div class="ocr-field-card">
-          <div class="ocr-field-label">4. Inspection Date</div>
-          <div class="ocr-field-value" id="ocr-m-ins-date">-</div>
-        </div>
-        <div class="ocr-field-card">
-          <div class="ocr-field-label">5. Inspector Name</div>
-          <div class="ocr-field-value" id="ocr-m-inspector">-</div>
-        </div>
-        <div class="ocr-field-card">
-          <div class="ocr-field-label">6. Compliance Status</div>
-          <div class="ocr-field-value" id="ocr-m-compliance">-</div>
-        </div>
-        <div class="ocr-field-card" style="grid-column: span 2;">
-          <div class="ocr-field-label">7. Violation Details</div>
-          <div class="ocr-field-value" id="ocr-m-violations">-</div>
-        </div>
-        <div class="ocr-field-card">
-          <div class="ocr-field-label">8. Risk Level</div>
-          <div class="ocr-field-value" id="ocr-m-risk">-</div>
-        </div>
-        <div class="ocr-field-card" style="grid-column: span 2;">
-          <div class="ocr-field-label">9. Corrective Action</div>
-          <div class="ocr-field-value" id="ocr-m-action">-</div>
-        </div>
-        <div class="ocr-field-card">
-          <div class="ocr-field-label">10. Due Date</div>
-          <div class="ocr-field-value" id="ocr-m-due">-</div>
-        </div>
-        <div class="ocr-field-card">
-          <div class="ocr-field-label">11. Certificate Number</div>
-          <div class="ocr-field-value mono" id="ocr-m-cert">-</div>
-        </div>
-        <div class="ocr-field-card">
-          <div class="ocr-field-label">12. Expiry Date</div>
-          <div class="ocr-field-value" id="ocr-m-expiry">-</div>
-        </div>
-        <div class="ocr-field-card" style="grid-column: span 2;">
-          <div class="ocr-field-label">13. Regulatory Reference</div>
-          <div class="ocr-field-value" id="ocr-m-reg-ref">-</div>
-        </div>
-      </div>
 
-      <!-- Raw OCR Transcript -->
-      <div class="form-group">
-        <label>Verbatim OCR Raw Text Transcript</label>
-        <textarea id="ocr-raw-text" readonly style="height: 160px; background: var(--color-bg-light); font-family: monospace; font-size: 12px; line-height: 1.5;"></textarea>
+        <!-- Right Pane: 13 Extracted Fields & Raw Text Transcript -->
+        <div style="display: flex; flex-direction: column;">
+          <div class="ocr-field-grid">
+            <div class="ocr-field-card">
+              <div class="ocr-field-label">1. Mine Name</div>
+              <div class="ocr-field-value" id="ocr-m-name">-</div>
+            </div>
+            <div class="ocr-field-card">
+              <div class="ocr-field-label">2. Mine Code</div>
+              <div class="ocr-field-value mono" id="ocr-m-code">-</div>
+            </div>
+            <div class="ocr-field-card">
+              <div class="ocr-field-label">3. Document Type</div>
+              <div class="ocr-field-value" id="ocr-m-type">-</div>
+            </div>
+            <div class="ocr-field-card">
+              <div class="ocr-field-label">4. Inspection Date</div>
+              <div class="ocr-field-value" id="ocr-m-ins-date">-</div>
+            </div>
+            <div class="ocr-field-card">
+              <div class="ocr-field-label">5. Inspector Name</div>
+              <div class="ocr-field-value" id="ocr-m-inspector">-</div>
+            </div>
+            <div class="ocr-field-card">
+              <div class="ocr-field-label">6. Compliance Status</div>
+              <div class="ocr-field-value" id="ocr-m-compliance">-</div>
+            </div>
+            <div class="ocr-field-card" style="grid-column: span 2;">
+              <div class="ocr-field-label">7. Violation Details</div>
+              <div class="ocr-field-value" id="ocr-m-violations">-</div>
+            </div>
+            <div class="ocr-field-card">
+              <div class="ocr-field-label">8. Risk Level</div>
+              <div class="ocr-field-value" id="ocr-m-risk">-</div>
+            </div>
+            <div class="ocr-field-card" style="grid-column: span 2;">
+              <div class="ocr-field-label">9. Corrective Action</div>
+              <div class="ocr-field-value" id="ocr-m-action">-</div>
+            </div>
+            <div class="ocr-field-card">
+              <div class="ocr-field-label">10. Due Date</div>
+              <div class="ocr-field-value" id="ocr-m-due">-</div>
+            </div>
+            <div class="ocr-field-card">
+              <div class="ocr-field-label">11. Certificate Number</div>
+              <div class="ocr-field-value mono" id="ocr-m-cert">-</div>
+            </div>
+            <div class="ocr-field-card">
+              <div class="ocr-field-label">12. Expiry Date</div>
+              <div class="ocr-field-value" id="ocr-m-expiry">-</div>
+            </div>
+            <div class="ocr-field-card" style="grid-column: span 2;">
+              <div class="ocr-field-label">13. Regulatory Reference</div>
+              <div class="ocr-field-value" id="ocr-m-reg-ref">-</div>
+            </div>
+          </div>
+
+          <!-- Raw OCR Transcript -->
+          <div class="form-group" style="margin-top: 8px; margin-bottom: 0;">
+            <label>Verbatim OCR Raw Text Transcript</label>
+            <textarea id="ocr-raw-text" readonly style="height: 130px; background: var(--color-bg-light); font-family: monospace; font-size: 11.5px; line-height: 1.45;"></textarea>
+          </div>
+        </div>
       </div>
     </div>
     <div class="modal-footer">

@@ -3,6 +3,7 @@ package controllers
 import (
 	"bytes"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,6 +40,7 @@ type documentItem struct {
 	ContractorName      string      `json:"contractor_name"`
 	DocumentType        string      `json:"document_type"`
 	FilePath            string      `json:"file_path"`
+	FilePreview         string      `json:"file_preview,omitempty"`
 	CertificateNumber   string      `json:"certificate_number"`
 	IssueDate           string      `json:"issue_date"`
 	ExpiryDate          string      `json:"expiry_date"`
@@ -214,10 +216,45 @@ func (dc *DocumentsController) ListDocuments(c *gin.Context) {
 			}
 		}
 
+		if d.OCRDataJSON != nil {
+			if m, ok := d.OCRDataJSON.(map[string]interface{}); ok {
+				if fp, ok := m["file_preview"].(string); ok && fp != "" {
+					d.FilePreview = fp
+				}
+			}
+		}
+
 		if d.FilePath != "" {
 			d.FilePath = filepath.ToSlash(d.FilePath)
 			if idx := strings.LastIndex(d.FilePath, "uploads/"); idx != -1 {
 				d.FilePath = d.FilePath[idx:]
+			}
+
+			// If file_preview is not stored in ocr_data_json, check disk to lazily populate for small files
+			if d.FilePreview == "" {
+				baseName := filepath.Base(d.FilePath)
+				candidates := []string{
+					filepath.Join(dc.Cfg.UploadDir, baseName),
+					filepath.Join("./uploads", baseName),
+					filepath.Join("../uploads", baseName),
+				}
+				for _, cand := range candidates {
+					if fi, err := os.Stat(cand); err == nil && fi.Size() < 3*1024*1024 {
+						if b, err := os.ReadFile(cand); err == nil {
+							mime := "image/png"
+							ext := strings.ToLower(filepath.Ext(cand))
+							if ext == ".jpg" || ext == ".jpeg" {
+								mime = "image/jpeg"
+							} else if ext == ".pdf" {
+								mime = "application/pdf"
+							} else if ext == ".webp" {
+								mime = "image/webp"
+							}
+							d.FilePreview = fmt.Sprintf("data:%s;base64,%s", mime, base64.StdEncoding.EncodeToString(b))
+							break
+						}
+					}
+				}
 			}
 		}
 
@@ -256,16 +293,35 @@ func (dc *DocumentsController) UploadDocument(c *gin.Context) {
 	defer out.Close()
 	_, _ = io.Copy(out, file)
 
+	// Read file bytes and encode to base64 for instant preview and multi-service transmission
+	fileBytes, _ := os.ReadFile(filePath)
+	var filePreviewBase64 string
+	if len(fileBytes) > 0 {
+		mime := "image/png"
+		lowerExt := strings.ToLower(ext)
+		if lowerExt == ".jpg" || lowerExt == ".jpeg" {
+			mime = "image/jpeg"
+		} else if lowerExt == ".pdf" {
+			mime = "application/pdf"
+		} else if lowerExt == ".webp" {
+			mime = "image/webp"
+		}
+		filePreviewBase64 = fmt.Sprintf("data:%s;base64,%s", mime, base64.StdEncoding.EncodeToString(fileBytes))
+	}
+
 	// Normalize path to absolute path
 	filePathNormalized := filepath.ToSlash(filePath)
 	if absPath, err := filepath.Abs(filePath); err == nil {
 		filePathNormalized = filepath.ToSlash(absPath)
 	}
 
-	// Call Flask OCR service with normalized URL
+	// Call Flask OCR service with normalized URL and base64 payload
 	baseURL := strings.TrimRight(dc.Cfg.AIServiceURL, "/")
 	ocrURL := fmt.Sprintf("%s/ocr", baseURL)
-	payload := map[string]string{"file_path": filePathNormalized}
+	payload := map[string]string{
+		"file_path":   filePathNormalized,
+		"file_base64": filePreviewBase64,
+	}
 	payloadJSON, _ := json.Marshal(payload)
 
 	var certNumber, docType, issueDate, expiryDate, rawText string
@@ -273,7 +329,7 @@ func (dc *DocumentsController) UploadDocument(c *gin.Context) {
 	var complianceStatus, violationDetails, riskLevel, correctiveAction, dueDate, regulatoryRef string
 	var fullOCRJSON []byte
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, postErr := client.Post(ocrURL, "application/json", bytes.NewBuffer(payloadJSON))
 	if postErr != nil && strings.Contains(ocrURL, "localhost") {
 		fallbackURL := strings.Replace(ocrURL, "localhost", "127.0.0.1", 1)
@@ -384,6 +440,17 @@ func (dc *DocumentsController) UploadDocument(c *gin.Context) {
 
 	webFilePath := fmt.Sprintf("uploads/%s", filename)
 
+	var ocrDataMap map[string]interface{}
+	if len(fullOCRJSON) > 0 {
+		_ = json.Unmarshal(fullOCRJSON, &ocrDataMap)
+	} else {
+		ocrDataMap = make(map[string]interface{})
+	}
+	if filePreviewBase64 != "" {
+		ocrDataMap["file_preview"] = filePreviewBase64
+	}
+	fullOCRJSON, _ = json.Marshal(ocrDataMap)
+
 	res, err := database.DB.Exec(`
 		INSERT INTO documents (
 			mine_id, contractor_id, document_type, file_path, certificate_number,
@@ -436,6 +503,10 @@ func (dc *DocumentsController) UploadDocument(c *gin.Context) {
 		"expiry_date":          expiryDate,
 		"status":               status,
 		"workflow_status":      "PENDING_REVIEW",
+		"file_path":            webFilePath,
+		"file_preview":         filePreviewBase64,
+		"ocr_raw_text":         rawText,
+		"ocr_data_json":        ocrDataMap,
 	})
 }
 

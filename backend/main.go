@@ -55,8 +55,15 @@ func main() {
 	// Ensure upload directory exists
 	_ = os.MkdirAll(cfg.UploadDir, 0755)
 
-	// Serve uploaded evidence photos and documents statically
-	router.Static("/uploads", cfg.UploadDir)
+	// Serve uploaded evidence photos and documents statically with cross-origin and caching headers
+	uploadGroup := router.Group("/uploads")
+	uploadGroup.Use(func(c *gin.Context) {
+		c.Header("Cross-Origin-Resource-Policy", "cross-origin")
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Cache-Control", "public, max-age=86400")
+		c.Next()
+	})
+	uploadGroup.StaticFS("", gin.Dir(cfg.UploadDir, false))
 
 	// Serve frontend directly if present (convenient for single-port / local runs)
 	if _, err := os.Stat("../frontend/index.html"); err == nil {

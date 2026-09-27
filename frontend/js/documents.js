@@ -74,10 +74,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const previewBack = document.getElementById('file-preview-back');
   if (previewBack) previewBack.addEventListener('click', closeFilePreviewModal);
 
-  // Load resources
-  await loadMines();
-  await loadContractorsDropdown();
-  await loadDocuments();
+  // File Upload Selection Preview Event
+  const docFileInput = document.getElementById('doc-file');
+  if (docFileInput) {
+    docFileInput.addEventListener('change', handleUploadFileSelect);
+  }
+
+  // Load resources in parallel for maximum speed
+  await Promise.all([
+    loadMines(),
+    loadContractorsDropdown(),
+    loadDocuments()
+  ]);
 });
 
 function setupRoleUI(user) {
@@ -254,7 +262,7 @@ function renderDocumentsTable(docs) {
     const riskClass = { LOW: 'badge-low', MEDIUM: 'badge-medium', HIGH: 'badge-high', CRITICAL: 'badge-critical' };
     const riskBadge = riskClass[d.risk_level] || 'badge-low';
 
-    const fileUrl = resolveDocumentFileUrl(d.file_path);
+    const fileUrl = resolveDocumentFileUrl(d.file_path, d);
 
     // Dynamic Role-Based Actions
     let actionButtons = `
@@ -347,13 +355,60 @@ function renderExpiryReminders(docs) {
 }
 
 // ----------------- Upload Modal Handlers -----------------
+function handleUploadFileSelect(e) {
+  const file = e.target.files[0];
+  const container = document.getElementById('upload-preview-container');
+  const img = document.getElementById('upload-preview-img');
+  const pdfBadge = document.getElementById('upload-preview-pdf');
+  const meta = document.getElementById('upload-file-meta');
+  if (!file || !container) return;
+
+  container.classList.remove('hidden');
+  const sizeKb = (file.size / 1024).toFixed(1);
+  meta.textContent = `${file.name} (${sizeKb} KB)`;
+
+  if (file.type.startsWith('image/')) {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      img.src = evt.target.result;
+      img.style.display = 'block';
+      pdfBadge.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  } else if (file.type === 'application/pdf') {
+    img.style.display = 'none';
+    img.src = '';
+    pdfBadge.style.display = 'block';
+  } else {
+    img.style.display = 'none';
+    img.src = '';
+    pdfBadge.style.display = 'none';
+  }
+}
+
+function resetUploadPreview() {
+  const container = document.getElementById('upload-preview-container');
+  const img = document.getElementById('upload-preview-img');
+  const pdfBadge = document.getElementById('upload-preview-pdf');
+  const meta = document.getElementById('upload-file-meta');
+  if (container) container.classList.add('hidden');
+  if (img) {
+    img.src = '';
+    img.style.display = 'none';
+  }
+  if (pdfBadge) pdfBadge.style.display = 'none';
+  if (meta) meta.textContent = '';
+}
+
 function openUploadModal() {
   const form = document.getElementById('document-form');
   form.reset();
+  resetUploadPreview();
   document.getElementById('document-modal').classList.remove('hidden');
 }
 
 function closeUploadModal() {
+  resetUploadPreview();
   document.getElementById('document-modal').classList.add('hidden');
 }
 
@@ -560,11 +615,54 @@ window.open13FieldOCRModal = function(id) {
   
   document.getElementById('ocr-raw-text').value = doc.ocr_raw_text || 'No raw text transcript available.';
 
+  // Connect Uploaded Evidence Document Preview
+  const fileUrl = resolveDocumentFileUrl(doc.file_path, doc);
+  const ocrImg = document.getElementById('ocr-doc-img');
+  const ocrIframe = document.getElementById('ocr-doc-iframe');
+  const ocrFallback = document.getElementById('ocr-doc-fallback');
+  const ocrOpenTab = document.getElementById('ocr-doc-open-tab');
+  const ocrDownloadBtn = document.getElementById('ocr-doc-download-btn');
+
+  if (ocrOpenTab) ocrOpenTab.href = fileUrl || '#';
+  if (ocrDownloadBtn) ocrDownloadBtn.href = fileUrl || '#';
+
+  const isPdf = (doc.file_path && doc.file_path.toLowerCase().endsWith('.pdf')) || (fileUrl && fileUrl.startsWith('data:application/pdf'));
+
+  if (fileUrl) {
+    if (isPdf) {
+      if (ocrImg) { ocrImg.style.display = 'none'; ocrImg.src = ''; }
+      if (ocrFallback) ocrFallback.style.display = 'none';
+      if (ocrIframe) {
+        ocrIframe.style.display = 'block';
+        ocrIframe.src = fileUrl;
+      }
+    } else {
+      if (ocrIframe) { ocrIframe.style.display = 'none'; ocrIframe.src = ''; }
+      if (ocrFallback) ocrFallback.style.display = 'none';
+      if (ocrImg) {
+        ocrImg.style.display = 'block';
+        ocrImg.src = fileUrl;
+        ocrImg.onerror = () => {
+          ocrImg.style.display = 'none';
+          if (ocrFallback) ocrFallback.style.display = 'block';
+        };
+      }
+    }
+  } else {
+    if (ocrImg) { ocrImg.style.display = 'none'; ocrImg.src = ''; }
+    if (ocrIframe) { ocrIframe.style.display = 'none'; ocrIframe.src = ''; }
+    if (ocrFallback) ocrFallback.style.display = 'block';
+  }
+
   document.getElementById('ocr-modal').classList.remove('hidden');
 };
 
 function closeOCRModal() {
   document.getElementById('ocr-modal').classList.add('hidden');
+  const ocrImg = document.getElementById('ocr-doc-img');
+  if (ocrImg) ocrImg.src = '';
+  const ocrIframe = document.getElementById('ocr-doc-iframe');
+  if (ocrIframe) ocrIframe.src = '';
 }
 
 function copyOCRTranscript() {
@@ -577,7 +675,15 @@ function copyOCRTranscript() {
 }
 
 // ----------------- File Preview Modal Handlers -----------------
-function resolveDocumentFileUrl(filePath) {
+function resolveDocumentFileUrl(filePath, doc) {
+  // 1. If embedded preview base64 exists, return it immediately for instant, 100% reliable rendering
+  if (doc) {
+    const preview = doc.file_preview || (doc.ocr_data_json && doc.ocr_data_json.file_preview);
+    if (preview && typeof preview === 'string' && (preview.startsWith('data:') || preview.startsWith('http://') || preview.startsWith('https://'))) {
+      return preview;
+    }
+  }
+
   if (!filePath) return '';
   if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('data:')) {
     return filePath;
@@ -599,12 +705,12 @@ function resolveDocumentFileUrl(filePath) {
 
 window.viewDocumentFile = function(id) {
   const doc = allDocuments.find(d => d.id === id);
-  if (!doc || !doc.file_path) {
+  if (!doc || (!doc.file_path && !doc.file_preview && (!doc.ocr_data_json || !doc.ocr_data_json.file_preview))) {
     showToast('No file attached to this document record', 'warning');
     return;
   }
 
-  const fileUrl = resolveDocumentFileUrl(doc.file_path);
+  const fileUrl = resolveDocumentFileUrl(doc.file_path, doc);
   const modal = document.getElementById('file-preview-modal');
   const imgEl = document.getElementById('preview-image');
   const iframeEl = document.getElementById('preview-iframe');
@@ -618,15 +724,24 @@ window.viewDocumentFile = function(id) {
     tabBtn.href = fileUrl;
   }
 
-  const isPdf = doc.file_path.toLowerCase().endsWith('.pdf');
+  const isPdf = (doc.file_path && doc.file_path.toLowerCase().endsWith('.pdf')) || (fileUrl && fileUrl.startsWith('data:application/pdf'));
   if (isPdf) {
     imgEl.style.display = 'none';
+    imgEl.src = '';
     iframeEl.style.display = 'block';
     iframeEl.src = fileUrl;
   } else {
     iframeEl.style.display = 'none';
+    iframeEl.src = '';
     imgEl.style.display = 'block';
     imgEl.src = fileUrl;
+    imgEl.onerror = () => {
+      // Fallback if network URL fails
+      const fallbackPreview = doc.file_preview || (doc.ocr_data_json && doc.ocr_data_json.file_preview);
+      if (fallbackPreview && imgEl.src !== fallbackPreview) {
+        imgEl.src = fallbackPreview;
+      }
+    };
   }
 
   modal.classList.remove('hidden');

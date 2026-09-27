@@ -23,8 +23,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('prod-modal-cancel').addEventListener('click', closeProdModal);
   document.getElementById('prod-form').addEventListener('submit', handleProdSubmit);
 
-  await loadMines();
-  await loadProdData();
+  await Promise.all([
+    loadMines(),
+    loadProdData()
+  ]);
 });
 
 async function loadMines() {

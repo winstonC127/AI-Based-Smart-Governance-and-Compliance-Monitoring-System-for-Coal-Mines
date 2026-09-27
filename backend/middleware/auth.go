@@ -43,6 +43,23 @@ func AuthRequired(cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
+// OptionalAuth parses the Bearer JWT if provided, populating user context,
+// but allows public or guest requests to proceed without error.
+func OptionalAuth(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if strings.HasPrefix(header, "Bearer ") {
+			tokenString := strings.TrimPrefix(header, "Bearer ")
+			if claims, err := utils.ParseJWT(cfg.JWTSecret, tokenString); err == nil && claims != nil {
+				c.Set(CtxUserID, claims.UserID)
+				c.Set(CtxEmail, claims.Email)
+				c.Set(CtxRoleKey, claims.RoleKey)
+			}
+		}
+		c.Next()
+	}
+}
+
 // RequireRoles restricts a route to a specific set of role keys (RBAC).
 // Usage: router.POST("/mines", middleware.RequireRoles("SUPER_ADMIN"), controller)
 func RequireRoles(allowedRoles ...string) gin.HandlerFunc {

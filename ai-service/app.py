@@ -59,8 +59,9 @@ from services.gemini_service import analyze_observation_with_gemini, handle_voic
 def run_ocr():
     data = request.get_json() or {}
     file_path = data.get("file_path", "")
+    file_base64 = data.get("file_base64", "")
     
-    result = process_document_ocr(file_path)
+    result = process_document_ocr(file_path, file_base64=file_base64)
     
     return jsonify({
         "success": True,

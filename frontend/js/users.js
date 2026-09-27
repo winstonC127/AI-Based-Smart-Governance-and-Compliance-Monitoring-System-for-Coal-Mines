@@ -19,8 +19,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('user-modal-cancel').addEventListener('click', closeUserModal);
   document.getElementById('user-form').addEventListener('submit', handleUserSubmit);
 
-  await loadInitialResources();
-  await loadUsers();
+  await Promise.all([
+    loadInitialResources(),
+    loadUsers()
+  ]);
 });
 
 async function loadInitialResources() {

@@ -8,8 +8,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('report-form').addEventListener('submit', handleReportSubmit);
 
-  await loadMines();
-  await loadReportHistory();
+  await Promise.all([
+    loadMines(),
+    loadReportHistory()
+  ]);
 });
 
 async function loadMines() {

@@ -70,6 +70,14 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config) {
 			auth.POST("/login", authController.Login)
 		}
 
+		// ---------------- AI ASSISTANT & TRANSLATION (Optional Auth) ----------------
+		aiGroup := api.Group("/ai")
+		aiGroup.Use(middleware.OptionalAuth(cfg))
+		{
+			aiGroup.POST("/voice-query", analyticsController.HandleVoiceQuery)
+			aiGroup.POST("/translate", analyticsController.TranslateText)
+		}
+
 		// ---------------- PROTECTED ROUTES ----------------
 		protected := api.Group("/")
 		protected.Use(middleware.AuthRequired(cfg))
@@ -240,8 +248,6 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config) {
 			protected.GET("/analytics/anomalies", analyticsController.GetAnomalies)
 			protected.GET("/analytics/recurring-violations", analyticsController.GetRecurringViolations)
 			protected.POST("/analytics/risk/recalculate", analyticsController.TriggerRiskRecalculate)
-			protected.POST("/ai/voice-query", analyticsController.HandleVoiceQuery)
-			protected.POST("/ai/translate", analyticsController.TranslateText)
 		}
 	}
 }

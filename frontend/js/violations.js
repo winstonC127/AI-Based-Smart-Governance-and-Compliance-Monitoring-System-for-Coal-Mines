@@ -32,11 +32,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('filter-severity').addEventListener('change', applyFilters);
   document.getElementById('filter-status').addEventListener('change', applyFilters);
 
-  // Load resources
-  await loadMines();
-  await loadCategories();
-  await loadAssignableUsers();
-  await loadViolations();
+  // Load resources in parallel
+  await Promise.all([
+    loadMines(),
+    loadCategories(),
+    loadAssignableUsers(),
+    loadViolations()
+  ]);
 });
 
 async function loadMines() {

@@ -136,12 +136,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('filter-mine').addEventListener('change', applyFilters);
   document.getElementById('filter-status').addEventListener('change', applyFilters);
 
-  // Load baseline resources
-  await loadMines();
-  await loadCategories();
-  await loadComplianceRules();
+  // Load baseline resources in parallel
+  await Promise.all([
+    loadMines(),
+    loadCategories(),
+    loadComplianceRules(),
+    loadInspections()
+  ]);
   initInspectionsMap();
-  await loadInspections();
 });
 
 async function loadMines() {
