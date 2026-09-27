@@ -418,11 +418,13 @@ async function handleUploadSubmit(e) {
   saveBtn.disabled = true;
   saveBtn.textContent = 'Uploading & Running Multimodal OCR...';
 
+  const docType = document.getElementById('doc-type')?.value;
   const mineId = document.getElementById('doc-mine').value;
   const contractorId = document.getElementById('doc-contractor')?.value;
   const fileField = document.getElementById('doc-file');
 
   const formData = new FormData();
+  if (docType) formData.append('document_type', docType);
   if (mineId) formData.append('mine_id', mineId);
   if (contractorId) formData.append('contractor_id', contractorId);
   if (fileField.files[0]) formData.append('document', fileField.files[0]);
@@ -447,6 +449,11 @@ async function handleUploadSubmit(e) {
     showToast(`OCR Completed! Extracted 13 fields for: ${json.data.document_type} (${json.data.certificate_number})`, 'success');
     closeUploadModal();
     await loadDocuments();
+
+    // Immediately launch the 13-field OCR inspector modal for the uploaded document
+    if (json.data && json.data.id) {
+      open13FieldOCRModal(json.data.id, json.data);
+    }
   } catch (err) {
     showError(err);
   } finally {
@@ -457,7 +464,7 @@ async function handleUploadSubmit(e) {
 
 // ----------------- Review Findings Modal (Safety Officer / Manager) -----------------
 window.openReviewModal = function(id) {
-  const doc = allDocuments.find(d => d.id === id);
+  const doc = allDocuments.find(d => String(d.id) === String(id));
   if (!doc) return;
 
   document.getElementById('rev-doc-id').value = doc.id;
@@ -500,7 +507,7 @@ async function handleReviewSubmit(e) {
 
 // ----------------- Approve Document (Mine Manager / Super Admin) -----------------
 window.approveDocument = async function(id) {
-  const doc = allDocuments.find(d => d.id === id);
+  const doc = allDocuments.find(d => String(d.id) === String(id));
   const certName = doc ? doc.certificate_number : `#${id}`;
 
   if (!confirm(`Are you sure you want to approve document ${certName} for mine-level statutory compliance?`)) {
@@ -518,7 +525,7 @@ window.approveDocument = async function(id) {
 
 // ----------------- Regulatory Verification (Regulatory Officer / Super Admin) -----------------
 window.openRegulatoryModal = function(id) {
-  const doc = allDocuments.find(d => d.id === id);
+  const doc = allDocuments.find(d => String(d.id) === String(id));
   if (!doc) return;
 
   document.getElementById('reg-doc-id').value = doc.id;
@@ -553,7 +560,7 @@ async function handleRegulatorySubmit(e) {
 
 // ----------------- Flag Violation Modal -----------------
 window.openFlagViolationModal = function(id) {
-  const doc = allDocuments.find(d => d.id === id);
+  const doc = allDocuments.find(d => String(d.id) === String(id));
   if (!doc) return;
 
   document.getElementById('fv-doc-id').value = doc.id;
@@ -593,8 +600,8 @@ async function handleFlagViolationSubmit(e) {
 }
 
 // ----------------- 13-Field OCR Inspector Modal -----------------
-window.open13FieldOCRModal = function(id) {
-  const doc = allDocuments.find(d => d.id === id);
+window.open13FieldOCRModal = function(id, directDoc = null) {
+  const doc = directDoc || allDocuments.find(d => String(d.id) === String(id));
   if (!doc) return;
 
   document.getElementById('ocr-modal-title').textContent = `AI OCR 13-Field Inspector — ${doc.certificate_number}`;
@@ -704,7 +711,7 @@ function resolveDocumentFileUrl(filePath, doc) {
 }
 
 window.viewDocumentFile = function(id) {
-  const doc = allDocuments.find(d => d.id === id);
+  const doc = allDocuments.find(d => String(d.id) === String(id));
   if (!doc || (!doc.file_path && !doc.file_preview && (!doc.ocr_data_json || !doc.ocr_data_json.file_preview))) {
     showToast('No file attached to this document record', 'warning');
     return;
@@ -758,7 +765,7 @@ function closeFilePreviewModal() {
 
 // ----------------- Edit & Delete Handlers -----------------
 window.openEditModal = function(id) {
-  const doc = allDocuments.find(d => d.id === id);
+  const doc = allDocuments.find(d => String(d.id) === String(id));
   if (!doc) return;
 
   const insDateFormatted = formatDate(doc.inspection_date);

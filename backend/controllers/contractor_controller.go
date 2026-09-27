@@ -92,7 +92,7 @@ func (cc *ContractorController) ListContractors(c *gin.Context) {
 }
 
 type contractorRequest struct {
-	MineID        int    `json:"mine_id" binding:"required"`
+	MineID        int    `json:"mine_id"`
 	CompanyName   string `json:"company_name" binding:"required"`
 	ContactPerson string `json:"contact_person"`
 	Phone         string `json:"phone"`
@@ -113,6 +113,17 @@ func (cc *ContractorController) CreateContractor(c *gin.Context) {
 
 	if req.Status == "" {
 		req.Status = "ACTIVE"
+	}
+
+	if req.MineID <= 0 {
+		_ = database.DB.QueryRow(`SELECT id FROM mines WHERE status = 'ACTIVE' ORDER BY id ASC LIMIT 1`).Scan(&req.MineID)
+		if req.MineID <= 0 {
+			req.MineID = 1
+		}
+	}
+
+	if req.ContractType == "" {
+		req.ContractType = "HEMM Operations"
 	}
 
 	userIDVal, _ := c.Get(middleware.CtxUserID)
@@ -147,6 +158,17 @@ func (cc *ContractorController) UpdateContractor(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Fail(c, http.StatusBadRequest, "Invalid request body", err.Error())
 		return
+	}
+
+	// Preserve existing mine_id, contract_type, status if not provided in update
+	if req.MineID <= 0 {
+		_ = database.DB.QueryRow(`SELECT mine_id FROM contractors WHERE id = ?`, id).Scan(&req.MineID)
+	}
+	if req.ContractType == "" {
+		_ = database.DB.QueryRow(`SELECT COALESCE(contract_type, 'HEMM Operations') FROM contractors WHERE id = ?`, id).Scan(&req.ContractType)
+	}
+	if req.Status == "" {
+		_ = database.DB.QueryRow(`SELECT COALESCE(status, 'ACTIVE') FROM contractors WHERE id = ?`, id).Scan(&req.Status)
 	}
 
 	userIDVal, _ := c.Get(middleware.CtxUserID)
@@ -259,7 +281,8 @@ func (cc *ContractorController) CheckContractExpiries(c *gin.Context) {
 	for rows.Next() {
 		var a expiryAlert
 		var cEnd []uint8
-		if err := rows.Scan(&a.ContractorID, &a.CompanyName, &a.ContractorID, &a.MineName, &cEnd, &a.DaysLeft); err == nil {
+		var mineID int
+		if err := rows.Scan(&a.ContractorID, &a.CompanyName, &mineID, &a.MineName, &cEnd, &a.DaysLeft); err == nil {
 			a.ContractEnd = string(cEnd)
 			alerts = append(alerts, a)
 

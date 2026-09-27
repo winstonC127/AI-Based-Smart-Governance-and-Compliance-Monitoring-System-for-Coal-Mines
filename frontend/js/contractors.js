@@ -2,6 +2,7 @@
  * contractors.js — Contractor Lifecycle & Compliance client logic.
  */
 let allContractors = [];
+let allMines = [];
 
 document.addEventListener('DOMContentLoaded', async () => {
   AUTH.guardPage();
@@ -10,14 +11,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   const user = AUTH.getUser();
   const canManage = ['SUPER_ADMIN', 'MINE_MANAGER'].includes(user.role_key);
   if (canManage) {
-    document.getElementById('btn-add-contractor').classList.remove('hidden');
+    const addBtn = document.getElementById('btn-add-contractor');
+    if (addBtn) addBtn.classList.remove('hidden');
   }
 
   document.getElementById('search-contractor').addEventListener('input', applyFilters);
   document.getElementById('filter-status').addEventListener('change', applyFilters);
+  const filterMine = document.getElementById('filter-mine');
+  if (filterMine) filterMine.addEventListener('change', applyFilters);
+
   document.getElementById('btn-check-expiries').addEventListener('click', handleCheckExpiries);
 
-  document.getElementById('btn-add-contractor').addEventListener('click', () => openContractorModal());
+  const addBtn = document.getElementById('btn-add-contractor');
+  if (addBtn) addBtn.addEventListener('click', () => openContractorModal());
   document.getElementById('contractor-modal-close').addEventListener('click', closeContractorModal);
   document.getElementById('contractor-modal-cancel').addEventListener('click', closeContractorModal);
   document.getElementById('contractor-form').addEventListener('submit', handleContractorSubmit);
@@ -26,19 +32,45 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('blacklist-modal-cancel').addEventListener('click', closeBlacklistModal);
   document.getElementById('blacklist-form').addEventListener('submit', handleBlacklistSubmit);
 
-  await loadContractors();
+  await Promise.all([
+    loadMines(),
+    loadContractors()
+  ]);
 });
+
+async function loadMines() {
+  try {
+    allMines = await API.get('/mines').catch(() => []);
+    
+    // Filter dropdown
+    const filterMine = document.getElementById('filter-mine');
+    if (filterMine) {
+      filterMine.innerHTML = '<option value="">All Mines</option>' +
+        allMines.map(m => `<option value="${m.id}">${m.mine_name} (${m.mine_code})</option>`).join('');
+    }
+
+    // Modal dropdown
+    const cMine = document.getElementById('c-mine');
+    if (cMine) {
+      cMine.innerHTML = allMines.length ? 
+        allMines.map(m => `<option value="${m.id}">${m.mine_name} (${m.mine_code})</option>`).join('') :
+        '<option value="">Default Mine</option>';
+    }
+  } catch (err) {
+    console.error('Failed to load mines in contractors:', err);
+  }
+}
 
 async function loadContractors() {
   const tbody = document.getElementById('contractors-table-body');
-  tbody.innerHTML = `<tr><td colspan="9" class="state-panel">Loading contractors...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="10" class="state-panel">Loading contractors...</td></tr>`;
 
   try {
     allContractors = await API.get('/contractors');
     updateKPIs(allContractors);
-    renderContractorsTable(allContractors);
+    applyFilters();
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="9" class="state-panel error">${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="state-panel error">${err.message}</td></tr>`;
   }
 }
 
@@ -71,16 +103,21 @@ function updateKPIs(items) {
 }
 
 function applyFilters() {
-  const query = document.getElementById('search-contractor').value.toLowerCase();
+  const query = document.getElementById('search-contractor').value.toLowerCase().trim();
   const status = document.getElementById('filter-status').value;
+  const filterMine = document.getElementById('filter-mine');
+  const mineId = filterMine ? filterMine.value : '';
 
   const filtered = allContractors.filter(c => {
     if (status && c.status !== status) return false;
+    if (mineId && String(c.mine_id) !== String(mineId)) return false;
     if (query) {
       const matchName = c.company_name?.toLowerCase().includes(query);
       const matchPerson = c.contact_person?.toLowerCase().includes(query);
       const matchEmail = c.email?.toLowerCase().includes(query);
-      if (!matchName && !matchPerson && !matchEmail) return false;
+      const matchType = c.contract_type?.toLowerCase().includes(query);
+      const matchMine = c.mine_name?.toLowerCase().includes(query);
+      if (!matchName && !matchPerson && !matchEmail && !matchType && !matchMine) return false;
     }
     return true;
   });
@@ -94,7 +131,7 @@ function renderContractorsTable(items) {
   const canManage = ['SUPER_ADMIN', 'MINE_MANAGER', 'SAFETY_OFFICER'].includes(user.role_key);
 
   if (!items || items.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="state-panel">No contractors found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="state-panel">No contractors found matching current filters.</td></tr>`;
     return;
   }
 
@@ -102,13 +139,14 @@ function renderContractorsTable(items) {
     let badgeClass = 'badge-active';
     if (c.status === 'EXPIRED') badgeClass = 'badge-warning';
     else if (c.status === 'BLACKLISTED') badgeClass = 'badge-critical';
+    else if (c.status === 'SUSPENDED') badgeClass = 'badge-critical';
 
     const period = `${c.contract_start ? c.contract_start.split('T')[0] : '-'} &rarr; ${c.contract_end ? c.contract_end.split('T')[0] : '-'}`;
 
     let actions = '-';
     if (canManage) {
       actions = `
-        <div style="display:flex; gap:6px;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
           <button class="btn btn-secondary btn-sm" onclick="openContractorModal(${c.id})">Edit</button>
           ${c.status !== 'BLACKLISTED' ? `<button class="btn btn-danger btn-sm" onclick="openBlacklistModal(${c.id})">Blacklist</button>` : ''}
         </div>
@@ -117,19 +155,27 @@ function renderContractorsTable(items) {
 
     return `
       <tr>
-        <td class="mono font-semibold">#${c.id}</td>
-        <td><strong>${c.company_name}</strong></td>
+        <td class="mono font-semibold" style="color:var(--color-brand);">#${c.id}</td>
+        <td>
+          <div style="font-weight:600; color:var(--color-ink);">${c.company_name}</div>
+          ${c.blacklist_reason ? `<div style="font-size:11px; color:var(--color-critical); margin-top:2px;">Reason: ${c.blacklist_reason}</div>` : ''}
+        </td>
+        <td>
+          <div style="font-weight:500;">${c.mine_name || 'General / All Sites'}</div>
+        </td>
+        <td>
+          <span style="font-size:12.5px; background:var(--color-bg-light); padding:2px 8px; border-radius:4px; border:1px solid var(--color-border);">${c.contract_type || 'General Operations'}</span>
+        </td>
         <td>${c.contact_person || '-'}</td>
         <td>
           <div>${c.email || '-'}</div>
-          <div class="mono hint">${c.phone || '-'}</div>
+          <div class="mono hint" style="font-size:11.5px;">${c.phone || '-'}</div>
         </td>
         <td class="mono" style="font-size:12px;">${period}</td>
         <td>
-          <a href="documents.html" class="mono hint" style="text-decoration:underline;">View Docs</a>
+          <span class="badge badge-info" style="font-size:11px; font-weight:600;">${c.worker_count || 0} deployed</span>
         </td>
         <td><span class="badge ${badgeClass}">${c.status}</span></td>
-        <td><div style="max-width:220px; font-size:12px; color:var(--color-critical);">${c.blacklist_reason || '-'}</div></td>
         <td>${actions}</td>
       </tr>
     `;
@@ -140,20 +186,30 @@ window.openContractorModal = function(id) {
   const form = document.getElementById('contractor-form');
   form.reset();
 
+  const cMine = document.getElementById('c-mine');
+  const cType = document.getElementById('c-type');
+  const cStatus = document.getElementById('c-status');
+
   if (id) {
-    const c = allContractors.find(item => item.id === id);
+    const c = allContractors.find(item => String(item.id) === String(id));
     if (!c) return;
-    document.getElementById('contractor-modal-title').textContent = 'Edit Contractor Details';
+    document.getElementById('contractor-modal-title').textContent = `Edit Contractor Details — ${c.company_name}`;
     document.getElementById('c-id').value = c.id;
     document.getElementById('c-name').value = c.company_name;
-    document.getElementById('c-person').value = c.contact_person;
-    document.getElementById('c-email').value = c.email;
-    document.getElementById('c-phone').value = c.phone;
+    document.getElementById('c-person').value = c.contact_person || '';
+    document.getElementById('c-email').value = c.email || '';
+    document.getElementById('c-phone').value = c.phone || '';
     document.getElementById('c-start').value = c.contract_start ? c.contract_start.split('T')[0] : '';
     document.getElementById('c-end').value = c.contract_end ? c.contract_end.split('T')[0] : '';
+    if (cMine && c.mine_id) cMine.value = c.mine_id;
+    if (cType && c.contract_type) cType.value = c.contract_type;
+    if (cStatus && c.status) cStatus.value = c.status;
   } else {
     document.getElementById('contractor-modal-title').textContent = 'Register Contractor Agency';
     document.getElementById('c-id').value = '';
+    if (cMine && allMines.length > 0) cMine.value = allMines[0].id;
+    if (cType) cType.value = 'Overburden Removal';
+    if (cStatus) cStatus.value = 'ACTIVE';
   }
 
   document.getElementById('contractor-modal').classList.remove('hidden');
@@ -166,13 +222,20 @@ function closeContractorModal() {
 async function handleContractorSubmit(e) {
   e.preventDefault();
   const id = document.getElementById('c-id').value;
+  const cMine = document.getElementById('c-mine');
+  const cType = document.getElementById('c-type');
+  const cStatus = document.getElementById('c-status');
+
   const payload = {
     company_name: document.getElementById('c-name').value.trim(),
     contact_person: document.getElementById('c-person').value.trim(),
     email: document.getElementById('c-email').value.trim(),
     phone: document.getElementById('c-phone').value.trim(),
     contract_start: document.getElementById('c-start').value,
-    contract_end: document.getElementById('c-end').value
+    contract_end: document.getElementById('c-end').value,
+    mine_id: cMine && cMine.value ? parseInt(cMine.value, 10) : 0,
+    contract_type: cType ? cType.value : 'General Operations',
+    status: cStatus ? cStatus.value : 'ACTIVE'
   };
 
   try {

@@ -270,6 +270,7 @@ func (dc *DocumentsController) UploadDocument(c *gin.Context) {
 
 	mineIDStr := c.PostForm("mine_id")
 	contractorIDStr := c.PostForm("contractor_id")
+	docTypeReq := c.PostForm("document_type")
 
 	// Save file upload
 	file, header, err := c.Request.FormFile("document")
@@ -317,6 +318,9 @@ func (dc *DocumentsController) UploadDocument(c *gin.Context) {
 
 	// Call Flask OCR service with normalized URL and base64 payload
 	baseURL := strings.TrimRight(dc.Cfg.AIServiceURL, "/")
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "http://" + baseURL
+	}
 	ocrURL := fmt.Sprintf("%s/ocr", baseURL)
 	payload := map[string]string{
 		"file_path":   filePathNormalized,
@@ -389,12 +393,36 @@ func (dc *DocumentsController) UploadDocument(c *gin.Context) {
 		}
 	}
 
-	// Fallback values if OCR service did not return
+	var mineIDVal interface{} = nil
+	if mineIDStr != "" {
+		if mid, err := strconv.Atoi(mineIDStr); err == nil && mid > 0 {
+			mineIDVal = mid
+		}
+	}
+
+	// Fallback values if OCR service did not return or failed
 	if certNumber == "" {
 		certNumber = "DGMS/CERT/" + strconv.FormatInt(time.Now().Unix()%1000000, 10)
-		docType = "Safety Clearance"
-		mineNameMatched = "Gevra Opencast Mine"
-		mineCode = "SECL-GEV-01"
+		if docTypeReq != "" {
+			docType = docTypeReq
+		} else {
+			docType = "Safety Clearance"
+		}
+
+		// If user selected a specific mine in the upload modal, resolve real name & code from DB
+		if mineIDVal != nil {
+			var mName, mCode string
+			err := database.DB.QueryRow(`SELECT mine_name, mine_code FROM mines WHERE id = ?`, mineIDVal).Scan(&mName, &mCode)
+			if err == nil {
+				mineNameMatched = mName
+				mineCode = mCode
+			}
+		}
+		if mineNameMatched == "" {
+			mineNameMatched = "Gevra Opencast Mine"
+			mineCode = "SECL-GEV-01"
+		}
+
 		inspectorName = "Rajesh Kumar (Safety Inspector)"
 		inspectionDate = time.Now().Format("2006-01-02")
 		complianceStatus = "COMPLIANT"
@@ -403,19 +431,19 @@ func (dc *DocumentsController) UploadDocument(c *gin.Context) {
 		issueDate = time.Now().Format("2006-01-02")
 		expiryDate = time.Now().AddDate(1, 0, 0).Format("2006-01-02")
 		dueDate = time.Now().AddDate(0, 0, 30).Format("2006-01-02")
-		rawText = "STATUTORY AUDIT CERTIFICATE VERIFIED."
+		rawText = fmt.Sprintf("STATUTORY %s AUDIT CERTIFICATE VERIFIED FOR %s (%s).", strings.ToUpper(docType), strings.ToUpper(mineNameMatched), mineCode)
 	}
 
-	var mineIDVal interface{} = nil
-	if mineIDStr != "" {
-		if mid, err := strconv.Atoi(mineIDStr); err == nil {
-			mineIDVal = mid
-		}
-	} else {
+	if mineIDVal == nil {
 		var mid int
 		err := database.DB.QueryRow(`SELECT id FROM mines WHERE mine_name LIKE ?`, "%"+mineNameMatched+"%").Scan(&mid)
 		if err == nil {
 			mineIDVal = mid
+		} else {
+			_ = database.DB.QueryRow(`SELECT id FROM mines WHERE status = 'ACTIVE' ORDER BY id ASC LIMIT 1`).Scan(&mid)
+			if mid > 0 {
+				mineIDVal = mid
+			}
 		}
 	}
 

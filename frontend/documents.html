@@ -319,6 +319,20 @@
     <form id="document-form" enctype="multipart/form-data">
       <div class="modal-body">
         <div class="form-group">
+          <label for="doc-type">Document / Certificate Type</label>
+          <select id="doc-type">
+            <option value="Statutory Safety Clearance">Statutory Safety Clearance</option>
+            <option value="DGMS Inspection Report">DGMS Inspection Report</option>
+            <option value="Environmental Compliance Certificate">Environmental Compliance Certificate</option>
+            <option value="Mine Safety Audit Certificate">Mine Safety Audit Certificate</option>
+            <option value="Ventilation Survey Certificate">Ventilation Survey Certificate</option>
+            <option value="Contractor Safety Clearance">Contractor Safety Clearance</option>
+            <option value="Explosives Handling License">Explosives Handling License</option>
+            <option value="Equipment Fitness Certificate">Equipment Fitness Certificate</option>
+            <option value="Other Statutory Document">Other Statutory Document</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label for="doc-mine">Mine Association</label>
           <select id="doc-mine">
             <option value="">No specific mine (General / HQ Certificate)</option>
@@ -496,7 +510,6 @@
 </div>
 
 <!-- 13-Field OCR Card Inspector Modal -->
-<div class="modal-backdrop hidden" id="ocr-modal">
 <div class="modal-backdrop hidden" id="ocr-modal">
   <div class="modal" style="max-width: 1180px; width: 96%;">
     <div class="modal-header">

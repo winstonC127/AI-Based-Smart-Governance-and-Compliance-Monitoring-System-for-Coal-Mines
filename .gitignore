@@ -26,6 +26,7 @@ uploads/*
 # Go builds & binaries
 backend/main.exe
 backend/*.exe
+*.exe~
 *.test
 *.prof
 
