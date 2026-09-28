@@ -1,5 +1,5 @@
-const CACHE_NAME = 'coalguard-shell-v9';
-const DATA_CACHE_NAME = 'coalguard-data-v9';
+const CACHE_NAME = 'coalguard-shell-v10';
+const DATA_CACHE_NAME = 'coalguard-data-v10';
 
 // Static assets to cache for offline availability
 const FILES_TO_CACHE = [
